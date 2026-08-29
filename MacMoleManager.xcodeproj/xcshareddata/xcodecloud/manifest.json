@@ -1,0 +1,9 @@
+{
+  "id" : "2a870847-1206-45cb-be83-43baf9b13826",
+  "targets" : [
+    {
+      "id" : "1db4e24a-287d-4e39-bbc9-9ef61ec3bb67",
+      "name" : "MacMoleManager"
+    }
+  ]
+}

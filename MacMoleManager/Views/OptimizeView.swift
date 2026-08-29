@@ -1,22 +1,24 @@
 //
-//  CleanView.swift
+//  OptimizeView.swift
 //  MacStorageManager
 //
-//  Replaces "Clean My Mac" mode. Was a single scrolling monospaced text
-//  block of mole's raw dry-run output; now grouped into MoleUI-style
-//  collapsible sections ("User essentials", "App caches", "Developer
-//  tools", …) via MoleReportParser + the shared MoleReportView — same
-//  category headers, item labels, and sizes mole itself prints, just
-//  organized instead of a wall of text.
+//  "Optimize" mode — modeled on CleanView's dry-run-then-confirm shape and
+//  now the same MoleUI-style grouped sections via the shared
+//  MoleReportView. Confirmed live: Optimize's output uses the same
+//  "➤ Category / → item" convention Clean does, just with mostly sizeless,
+//  pass/fail-style items ("DNS cache flushed", "Broken login item: Ice (app
+//  not found)") instead of Clean's item counts and byte sizes — and a "◎ "
+//  glyph in place of "→ " for anything that needs the user's attention,
+//  which MoleReportParser surfaces as a warning-styled item. Covers Mole's
+//  memory/launch-agent/login-item optimization pass.
 //
-//  This is read-only grouping, not partial selection: mole has no flag to
-//  clean just one category or item, so "Clean Now" still runs the full
-//  `mole clean` mole's dry run previewed, same as before.
+//  Read-only grouping, not partial selection — same caveat as Clean:
+//  "Optimize Now" still runs the full `mole optimize` the dry run previewed.
 //
 
 import SwiftUI
 
-struct CleanView: View {
+struct OptimizeView: View {
     @EnvironmentObject var vm: AppViewModel
     @State private var showConfirm = false
     @State private var showRawOutput = false
@@ -24,21 +26,21 @@ struct CleanView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Clean My Mac").font(.title2).bold()
+                Text("Optimize").font(.title2).bold()
                 Spacer()
                 Button {
-                    Task { await vm.runCleanDryRun() }
+                    Task { await vm.runOptimizeDryRun() }
                 } label: {
                     Label("Preview (dry run)", systemImage: "eye")
                 }
             }
 
-            if vm.cleanDryRunOutput != nil {
+            if vm.optimizeDryRunOutput != nil {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        MoleReportView(report: vm.cleanReport, applyActionLabel: "Clean Now")
+                        MoleReportView(report: vm.optimizeReport, applyActionLabel: "Optimize Now")
 
-                        if let raw = vm.cleanDryRunOutput {
+                        if let raw = vm.optimizeDryRunOutput {
                             DisclosureGroup("Raw mole output", isExpanded: $showRawOutput) {
                                 Text(raw)
                                     .font(.system(.caption, design: .monospaced))
@@ -57,20 +59,20 @@ struct CleanView: View {
                 Button(role: .destructive) {
                     showConfirm = true
                 } label: {
-                    Label("Clean Now", systemImage: "sparkles")
+                    Label("Optimize Now", systemImage: "gauge.with.dots.needle.67percent")
                 }
                 .confirmationDialog(
-                    "This permanently deletes the matched items. Continue?",
+                    "This applies the matched optimizations. Continue?",
                     isPresented: $showConfirm,
                     titleVisibility: .visible
                 ) {
-                    Button("Clean", role: .destructive) {
-                        Task { await vm.confirmClean() }
+                    Button("Optimize", role: .destructive) {
+                        Task { await vm.confirmOptimize() }
                     }
                     Button("Cancel", role: .cancel) { }
                 }
-            } else if let result = vm.cleanResultOutput {
-                Label("Clean complete", systemImage: "checkmark.circle.fill")
+            } else if let result = vm.optimizeResultOutput {
+                Label("Optimize complete", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .font(.headline)
                 ScrollView {
@@ -80,27 +82,19 @@ struct CleanView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-            } else if !vm.cleanLiveOutput.isEmpty {
-                // The scan itself can run for minutes on a full disk — this
-                // shows mole's own output scrolling by live (polled from
-                // MoleRunner's stdout buffer a few times a second, see
-                // AppViewModel.runCleanDryRun) instead of leaving the busy
-                // overlay's spinner as the only sign anything is happening.
+            } else if !vm.optimizeLiveOutput.isEmpty {
                 Label("Scanning…", systemImage: "magnifyingglass")
                     .font(.headline)
                     .foregroundStyle(.secondary)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        Text(vm.cleanLiveOutput)
+                        Text(vm.optimizeLiveOutput)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id("bottom")
                     }
-                    // Keeps the tail of mole's output in view as it streams
-                    // in, the way `tail -f` would — without this the
-                    // ScrollView just sits at the top as new lines arrive.
-                    .onChange(of: vm.cleanLiveOutput) { _, _ in
+                    .onChange(of: vm.optimizeLiveOutput) { _, _ in
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 }
@@ -108,8 +102,8 @@ struct CleanView: View {
             } else {
                 ContentUnavailableView(
                     "No preview yet",
-                    systemImage: "sparkles",
-                    description: Text("Tap Preview to see what can be cleaned before deleting anything.\nScanning your whole Mac can take several minutes, especially the first time — it's not stuck.")
+                    systemImage: "gauge.with.dots.needle.67percent",
+                    description: Text("Tap Preview to see what would be optimized before applying anything.")
                 )
             }
 

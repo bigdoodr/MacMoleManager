@@ -2,16 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!--
-      App Sandbox is deliberately OFF. This app shells out to an arbitrary
-      external CLI (mole) and reads/deletes files across the user's disk
-      under Full Disk Access — that's incompatible with the App Sandbox's
-      container model. Developer ID signing + notarization (not the Mac
-      App Store) is the distribution path, same as most disk-utility
-      tools (AppCleaner, DaisyDisk, etc.) and same as swiftDialog itself.
-      Do not add com.apple.security.app-sandbox=true here.
-    -->
-    <key>com.apple.security.app-sandbox</key>
-    <false/>
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
 </dict>
 </plist>

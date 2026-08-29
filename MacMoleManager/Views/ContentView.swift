@@ -33,7 +33,7 @@ struct ContentView: View {
             }
             .overlay {
                 if vm.isBusy {
-                    ProgressOverlay()
+                    ProgressOverlay(message: vm.busyMessage)
                 }
             }
         }
@@ -48,6 +48,9 @@ struct ContentView: View {
         case .analyze: DiskUsageView()
         case .uninstall: UninstallView()
         case .clean: CleanView()
+        case .optimize: OptimizeView()
+        case .purge: PurgeView()
+        case .installer: InstallerView()
         }
     }
 }
@@ -113,10 +116,12 @@ private struct ErrorBanner: View {
 }
 
 private struct ProgressOverlay: View {
+    var message: String = "Working…"
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.05)
-            ProgressView("Working…")
+            ProgressView(message)
                 .padding(24)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         }

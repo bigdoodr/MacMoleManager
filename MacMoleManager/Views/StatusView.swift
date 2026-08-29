@@ -75,6 +75,72 @@ struct StatusView: View {
         }
         .padding(24)
         .task { if vm.status == nil { await vm.loadStatus() } }
+        .sheet(isPresented: $vm.isPromptingForAdminPassword) {
+            AdminPasswordPromptSheet(vm: vm)
+        }
+    }
+}
+
+/// Shown when mole can't reach its own /dev/tty password prompt from inside
+/// a GUI app. Runs `sudo mole update` directly with the entered password —
+/// see MoleRunner.update(withAdminPassword:). Stays open and shows exactly
+/// what sudo reported (wrong password vs. not an admin account) on failure
+/// instead of silently re-prompting.
+private struct AdminPasswordPromptSheet: View {
+    @ObservedObject var vm: AppViewModel
+    @State private var password = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Admin Access Required")
+                .font(.headline)
+            Text("Mole needs administrator privileges to check for updates. Enter your password to continue.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            SecureField("Password", text: $password)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+                .disabled(vm.isSubmittingAdminPassword)
+                .onSubmit(submit)
+
+            if vm.isSubmittingAdminPassword {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Verifying…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let error = vm.adminPasswordError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    vm.cancelAdminPasswordPrompt()
+                }
+                .disabled(vm.isSubmittingAdminPassword)
+                Button("Unlock") { submit() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(password.isEmpty || vm.isSubmittingAdminPassword)
+            }
+        }
+        .padding(24)
+        .frame(width: 360)
+        .task { isFocused = true }
+        .onChange(of: vm.adminPasswordError) { _, error in
+            if error != nil { isFocused = true }
+        }
+    }
+
+    private func submit() {
+        guard !password.isEmpty else { return }
+        let entered = password
+        password = ""
+        Task { await vm.submitAdminPassword(entered) }
     }
 }
 
