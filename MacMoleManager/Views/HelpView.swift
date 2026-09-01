@@ -58,6 +58,21 @@ struct HelpView: View {
                         title: "Installer Cleanup",
                         description: "Looks in Downloads, Desktop, and Documents for leftover .dmg and .pkg installer files you likely don't need anymore, and lets you pick which ones to send to the Trash."
                     )
+                    HelpSection(
+                        systemImage: "clock.arrow.circlepath",
+                        title: "History",
+                        description: "A log of Mole's past clean, optimize, uninstall, and purge runs, plus every individual file that's actually been deleted along the way."
+                    )
+                    HelpSection(
+                        systemImage: "waveform.path.ecg",
+                        title: "Live Stats",
+                        description: "The same health, CPU, memory, and disk numbers as System Status, but refreshed automatically every few seconds instead of once — plus top processes, battery, network, and uptime."
+                    )
+                    HelpSection(
+                        systemImage: "gearshape",
+                        title: "Settings",
+                        description: "Pick which caches Clean My Mac is never allowed to remove, and which project folders Deep Purge should treat as its own."
+                    )
                 }
 
                 Divider()

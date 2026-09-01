@@ -24,6 +24,9 @@ final class AppViewModel: ObservableObject {
         case optimize = "Optimize"
         case purge = "Deep Purge"
         case installer = "Installer Cleanup"
+        case history = "History"
+        case liveStats = "Live Stats"
+        case settings = "Settings"
 
         var id: String { rawValue }
 
@@ -36,6 +39,9 @@ final class AppViewModel: ObservableObject {
             case .optimize: return "gauge.with.dots.needle.67percent"
             case .purge: return "flame"
             case .installer: return "shippingbox"
+            case .history: return "clock.arrow.circlepath"
+            case .liveStats: return "waveform.path.ecg"
+            case .settings: return "gearshape"
             }
         }
     }
@@ -132,6 +138,36 @@ final class AppViewModel: ObservableObject {
     @Published var installerHasScanned = false
     @Published var selectedInstallerLeftoverIDs: Set<UUID> = []
     @Published var installerCleanupResultMessage: String?
+
+    // History
+    @Published var moleHistory: MoleHistory?
+
+    // Live Stats — a continuously-refreshing `mole status --json`, distinct
+    // from the one-shot `status` above so a slow/failing poll here can't
+    // stomp on the System Status tab's own state (or trigger the app-wide
+    // busy overlay/error banner every few seconds while this tab is open).
+    @Published var liveStatus: MoleStatus?
+    @Published var isLiveStatsRunning = false
+    @Published var liveStatsErrorMessage: String?
+    @Published var liveStatsLastUpdated: Date?
+
+    // Settings — native editing of Mole's own on-disk whitelist and
+    // purge_paths config files, not a wrapped mole subcommand. Both
+    // `mole clean --whitelist` and `mole purge --paths` are genuine
+    // interactive-only experiences (confirmed live: a raw-terminal
+    // checklist, and dropping into vim) — see MoleConfigStore.swift.
+    @Published var whitelistSelectedPatterns: Set<String> = []
+    /// Anything already in the saved whitelist file that isn't one of the
+    /// catalog rows in MoleWhitelistCatalog — either a path the user (or
+    /// Mole's own interactive manager) added by hand, or one of the a
+    /// handful of DEFAULT_WHITELIST_PATTERNS entries that don't map onto a
+    /// single catalog row (a broader glob than any one item covers).
+    /// Preserved verbatim rather than dropped, so saving from Settings
+    /// never silently un-protects something.
+    @Published var whitelistCustomPatterns: [String] = []
+    @Published var purgePaths: [String] = []
+    @Published var hasLoadedSettings = false
+    @Published var settingsSaveMessage: String?
 
     private let runner = MoleRunner.shared
 
@@ -447,6 +483,98 @@ final class AppViewModel: ObservableObject {
             self.installerHasScanned = true
             self.selectedInstallerLeftoverIDs = []
             self.installerCleanupResultMessage = nil
+        }
+    }
+
+    func loadHistory() async {
+        await runTask(message: "Loading history…") {
+            self.moleHistory = try await self.runner.history()
+        }
+    }
+
+    /// Runs until the calling `.task` is cancelled by SwiftUI — i.e. for as
+    /// long as the Live Stats tab stays selected. Every cycle shells out to
+    /// `mole status --json` again; there's no "watch" flag Mole supports for
+    /// this, so polling a few seconds apart is the only way to get a
+    /// refreshing dashboard rather than a one-shot snapshot.
+    func runLiveStatsLoop() async {
+        isLiveStatsRunning = true
+        defer { isLiveStatsRunning = false }
+        while !Task.isCancelled {
+            do {
+                liveStatus = try await runner.status()
+                liveStatsErrorMessage = nil
+                liveStatsLastUpdated = Date()
+            } catch {
+                liveStatsErrorMessage = error.localizedDescription
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+    }
+
+    /// Loads both config files fresh from disk. Safe to call more than once
+    /// (e.g. re-entering the Settings tab) — always reflects whatever is
+    /// currently on disk rather than stale in-memory state, since Terminal
+    /// `mole` or MoleUI could have changed either file since MMM last read it.
+    func loadSettings() {
+        let savedWhitelist = Set(MoleConfigStore.loadWhitelistPatterns())
+        // No file yet means Mole is running on its own built-in defaults —
+        // show those as already protected rather than an empty, misleading
+        // checklist.
+        let effectiveWhitelist = savedWhitelist.isEmpty ? Set(MoleWhitelistCatalog.defaultPatterns) : savedWhitelist
+        let catalogPatterns = Set(MoleWhitelistCatalog.items.map(\.expandedPattern))
+        whitelistSelectedPatterns = effectiveWhitelist.intersection(catalogPatterns)
+            .union(MoleWhitelistCatalog.alwaysProtectedPatterns)
+        whitelistCustomPatterns = effectiveWhitelist.subtracting(catalogPatterns).sorted()
+        purgePaths = MoleConfigStore.loadPurgePaths()
+        hasLoadedSettings = true
+        settingsSaveMessage = nil
+    }
+
+    func toggleWhitelistItem(_ item: WhitelistCatalogItem) {
+        guard !item.isAlwaysProtected else { return }
+        if whitelistSelectedPatterns.contains(item.expandedPattern) {
+            whitelistSelectedPatterns.remove(item.expandedPattern)
+        } else {
+            whitelistSelectedPatterns.insert(item.expandedPattern)
+        }
+        settingsSaveMessage = nil
+    }
+
+    func addCustomWhitelistPattern(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !whitelistCustomPatterns.contains(trimmed) else { return }
+        whitelistCustomPatterns.append(trimmed)
+        settingsSaveMessage = nil
+    }
+
+    func removeCustomWhitelistPattern(_ pattern: String) {
+        whitelistCustomPatterns.removeAll { $0 == pattern }
+        settingsSaveMessage = nil
+    }
+
+    func addPurgePath(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !purgePaths.contains(trimmed) else { return }
+        purgePaths.append(trimmed)
+        settingsSaveMessage = nil
+    }
+
+    func removePurgePath(_ path: String) {
+        purgePaths.removeAll { $0 == path }
+        settingsSaveMessage = nil
+    }
+
+    /// Writes both config files. Plain synchronous FileManager calls (no
+    /// `mole` subprocess involved), so unlike the rest of this view model
+    /// there's no need to route this through `runTask`'s busy overlay.
+    func saveSettings() {
+        do {
+            try MoleConfigStore.saveWhitelistPatterns(Array(whitelistSelectedPatterns) + whitelistCustomPatterns)
+            try MoleConfigStore.savePurgePaths(purgePaths)
+            settingsSaveMessage = "Saved"
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

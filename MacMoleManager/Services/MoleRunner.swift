@@ -213,6 +213,17 @@ actor MoleRunner {
         return try decode(MoleAnalysis.self, from: raw)
     }
 
+    // MARK: - History
+
+    /// `mole history --json` — a log of past sessions (clean/optimize/
+    /// uninstall/…) plus a separate list of individual file deletions,
+    /// confirmed against a real sample from Casey's Mac. Read-only, so no
+    /// dry-run/execute split like Clean or Optimize.
+    func history() async throws -> MoleHistory {
+        let raw = try await run(arguments: ["history", "--json"])
+        return try decode(MoleHistory.self, from: raw)
+    }
+
     // MARK: - Clean
 
     /// `liveOutput`, if given, is fed the same stdout chunks as they arrive

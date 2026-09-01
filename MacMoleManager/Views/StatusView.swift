@@ -144,7 +144,8 @@ private struct AdminPasswordPromptSheet: View {
     }
 }
 
-private struct StatTile: View {
+/// Not `private` — LiveStatsView reuses this for the same tile grid.
+struct StatTile: View {
     let title: String
     let value: String
 

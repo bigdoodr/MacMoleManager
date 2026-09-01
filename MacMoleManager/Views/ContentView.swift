@@ -51,6 +51,9 @@ struct ContentView: View {
         case .optimize: OptimizeView()
         case .purge: PurgeView()
         case .installer: InstallerView()
+        case .history: HistoryView()
+        case .liveStats: LiveStatsView()
+        case .settings: SettingsView()
         }
     }
 }
