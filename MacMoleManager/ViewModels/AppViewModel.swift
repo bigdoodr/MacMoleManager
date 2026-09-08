@@ -189,18 +189,48 @@ final class AppViewModel: ObservableObject {
     /// Runs Mole's own installer (not a vendored binary) so the app tracks
     /// Mole's release cadence. On success, immediately loads status so the
     /// rest of the UI has something to show right away.
+    ///
+    /// Primary path is `runner.install()` — a plain, promptless run that
+    /// works whenever install.sh never needs to elevate. Confirmed live: on
+    /// a Mac that's never had `/usr/local/bin` created (no prior Homebrew or
+    /// Xcode Command Line Tools install), install.sh decides it needs sudo
+    /// and its lock-reauthentication step reads/writes `/dev/tty` directly —
+    /// something a Process/Pipe child has none of, so it fails outright with
+    /// "/dev/tty: Device not configured" rather than a permission error. If
+    /// that happens, fall back to `performElevatedInstall()`, the same
+    /// real-pty-plus-native-dialog approach `updateMole()` already uses for
+    /// its own /dev/tty problem.
     func installMole() async {
         isInstallingMole = true
         errorMessage = nil
         defer { isInstallingMole = false }
         do {
-            _ = try await runner.install()
+            do {
+                _ = try await runner.install()
+            } catch {
+                _ = try await performElevatedInstall()
+                try await runner.refreshBinaryPathAfterExternalInstall()
+            }
             moleInstalled = true
             await refreshMoleVersion()
             await loadStatus()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Pre-authenticates via `sudo -A -v` through AskPassHelper's native
+    /// dialog (Touch ID first, if configured), then runs Mole's install
+    /// script in that same real pty session — install.sh's own internal
+    /// sudo calls (`needs_sudo`/`maybe_sudo`/its lock reauthentication step)
+    /// then find an already-warm ticket and never need to prompt, or touch
+    /// `/dev/tty`, again. Mirrors `performElevatedUpdate()` below exactly,
+    /// just running the installer instead of `mole update`.
+    private func performElevatedInstall() async throws -> String {
+        let scriptPath = try AskPassHelper.write(reason: .install)
+        defer { try? FileManager.default.removeItem(atPath: scriptPath) }
+        let command = "export SUDO_ASKPASS=\(scriptPath.shellEscaped); sudo -A -v && \(MoleRunner.installScriptCommand)"
+        return try await PTYRunner().run(command: command)
     }
 
     /// `mo update` — moves an already-installed Mole forward to the latest
@@ -247,7 +277,7 @@ final class AppViewModel: ObservableObject {
     /// `brew upgrade`) uses that already-warmed ticket itself, rather than
     /// this app running mole (or brew) as root directly.
     private func performElevatedUpdate() async throws -> String {
-        let scriptPath = try AskPassHelper.write()
+        let scriptPath = try AskPassHelper.write(reason: .update)
         defer { try? FileManager.default.removeItem(atPath: scriptPath) }
         let binaryPath = try await runner.resolveBinaryPath()
         let command = "export SUDO_ASKPASS=\(scriptPath.shellEscaped); sudo -A -v && \(binaryPath.shellEscaped) update"

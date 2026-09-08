@@ -18,15 +18,31 @@ import Foundation
 
 enum AskPassHelper {
 
+    /// What the dialog says needs the access — install (a fresh Mac whose
+    /// `/usr/local/bin` doesn't exist yet) vs. update (an already-installed
+    /// Mole moving to a new version). Same mechanism either way; only the
+    /// wording differs.
+    enum Reason {
+        case install
+        case update
+
+        var verb: String {
+            switch self {
+            case .install: return "install"
+            case .update: return "update"
+            }
+        }
+    }
+
     /// Writes a fresh helper script to a private temp location and returns
     /// its path. Each call gets its own file (rather than one shared,
     /// reused script) so nothing has to reason about concurrent elevated
     /// operations sharing state — callers are responsible for deleting the
     /// file once the command it's used for has finished.
-    static func write() throws -> String {
+    static func write(reason: Reason = .update) throws -> String {
         let script = """
         #!/bin/bash
-        osascript -e 'text returned of (display dialog "MacMoleManager needs administrator access to update Mole.\n\nEnter your Mac account password below." with title "MacMoleManager" default answer "" with hidden answer buttons {"Cancel","OK"} default button 2 with icon caution)' 2>/dev/null
+        osascript -e 'text returned of (display dialog "MacMoleManager needs administrator access to \(reason.verb) Mole." with title "MacMoleManager" default answer "" with hidden answer buttons {"Cancel","OK"} default button 2 with icon caution)' 2>/dev/null
         """
 
         let url = FileManager.default.temporaryDirectory

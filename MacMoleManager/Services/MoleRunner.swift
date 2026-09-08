@@ -58,7 +58,12 @@ actor MoleRunner {
     /// The install script Mole itself documents (https://mole.fit → tw93/mole).
     /// Running this instead of vendoring a binary keeps the app on Mole's own
     /// release cadence — `mo update` later moves it forward the same way.
-    private static let installScriptCommand =
+    ///
+    /// Not `private`: AppViewModel.performElevatedInstall() reuses this exact
+    /// command inside a pty session when the plain `install()` below fails —
+    /// see that method's doc comment for why a second, differently-plumbed
+    /// attempt is sometimes needed.
+    static let installScriptCommand =
         "curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash"
 
     /// Resolved once and cached — mirrors discoverMoleBin() from the shell script,
@@ -186,9 +191,21 @@ actor MoleRunner {
 
     // MARK: - Install
 
-    /// Runs Mole's own installer end to end. On success, forgets any cached
+    /// Runs Mole's own installer end to end via a plain Process/Pipe child —
+    /// no controlling terminal, so this only works when install.sh never
+    /// needs to elevate (i.e. `/usr/local/bin` already exists and is
+    /// user-writable, the common case on a Mac that's had Homebrew or Xcode's
+    /// Command Line Tools installed before). On success, forgets any cached
     /// (missing) binary path so the next call re-discovers the freshly
     /// installed one instead of continuing to report "not found."
+    ///
+    /// Confirmed live: on a genuinely fresh Mac, install.sh decides it needs
+    /// sudo (its own `needs_sudo()`, when `/usr/local/bin` doesn't exist yet
+    /// or isn't writable) and its lock-reauthentication step reads/writes
+    /// `/dev/tty` directly — which a Pipe-backed child has none of, so it
+    /// fails outright with "/dev/tty: Device not configured" rather than a
+    /// permission error. If that happens, AppViewModel.installMole() catches
+    /// it and retries through performElevatedInstall() instead.
     func install() async throws -> String {
         let output = try await runProcess(
             executableURL: URL(fileURLWithPath: "/bin/bash"),
@@ -197,6 +214,16 @@ actor MoleRunner {
         cachedBinaryPath = nil
         _ = try resolveBinaryPath() // surfaces binaryNotFound if the install didn't actually land a usable binary
         return output
+    }
+
+    /// Forgets any cached (missing) binary path and re-resolves it — call
+    /// after installing Mole through a path other than `install()` itself
+    /// (see AppViewModel.performElevatedInstall()), so the next lookup finds
+    /// the freshly installed binary instead of continuing to report "not
+    /// found."
+    func refreshBinaryPathAfterExternalInstall() throws {
+        cachedBinaryPath = nil
+        _ = try resolveBinaryPath()
     }
 
     // MARK: - Status
