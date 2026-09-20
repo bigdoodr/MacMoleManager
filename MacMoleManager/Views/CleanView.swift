@@ -2,16 +2,10 @@
 //  CleanView.swift
 //  MacStorageManager
 //
-//  Replaces "Clean My Mac" mode. Was a single scrolling monospaced text
-//  block of mole's raw dry-run output; now grouped into MoleUI-style
-//  collapsible sections ("User essentials", "App caches", "Developer
-//  tools", …) via MoleReportParser + the shared MoleReportView — same
-//  category headers, item labels, and sizes mole itself prints, just
-//  organized instead of a wall of text.
-//
-//  This is read-only grouping, not partial selection: mole has no flag to
-//  clean just one category or item, so "Clean Now" still runs the full
-//  `mole clean` mole's dry run previewed, same as before.
+//  "Clean My Mac" mode: mole's dry-run output grouped into collapsible
+//  sections via MoleReportParser + the shared MoleReportView. Read-only
+//  grouping, not partial selection — mole has no flag to clean just one
+//  category or item, so "Clean Now" still runs the full `mole clean`.
 //
 
 import SwiftUI
@@ -81,11 +75,6 @@ struct CleanView: View {
                 }
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             } else if !vm.cleanLiveOutput.isEmpty {
-                // The scan itself can run for minutes on a full disk — this
-                // shows mole's own output scrolling by live (polled from
-                // MoleRunner's stdout buffer a few times a second, see
-                // AppViewModel.runCleanDryRun) instead of leaving the busy
-                // overlay's spinner as the only sign anything is happening.
                 Label("Scanning…", systemImage: "magnifyingglass")
                     .font(.headline)
                     .foregroundStyle(.secondary)
@@ -97,9 +86,7 @@ struct CleanView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id("bottom")
                     }
-                    // Keeps the tail of mole's output in view as it streams
-                    // in, the way `tail -f` would — without this the
-                    // ScrollView just sits at the top as new lines arrive.
+                    // Keeps the tail of mole's output in view as it streams in.
                     .onChange(of: vm.cleanLiveOutput) { _, _ in
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }

@@ -2,19 +2,11 @@
 //  InstallerScanner.swift
 //  MacStorageManager
 //
-//  Native replacement for wrapping `mole installer`. That subcommand turned
-//  out (confirmed live) to be a genuine interactive raw-terminal UI — an
-//  arrow-key/space/enter checklist, the same category of program as `nano`
-//  or `htop` — not a plain-text preview like clean/optimize/purge. A GUI
-//  app's `Process`+`Pipe` gives a child no real terminal to draw into, so
-//  it just hangs forever waiting for terminal control it will never get;
-//  see the doc comment above the (now-removed) installer methods in
-//  MoleRunner.swift for the fuller story.
-//
-//  Since the actual task — find stray .dmg/.pkg installers in the usual
-//  drop spots and let the user delete the ones they don't need — doesn't
-//  require mole at all, this scans and deletes directly via FileManager.
-//  Simpler, fully reliable, and no terminal emulation required.
+//  Native replacement for wrapping `mole installer`, which is a genuine
+//  interactive raw-terminal UI (arrow-key/space/enter checklist), not a
+//  plain-text preview — `Process`+`Pipe` gives it no real terminal to draw
+//  into and it hangs forever. Finding stray .dmg/.pkg installers doesn't
+//  need mole at all, so this scans and deletes directly via FileManager.
 //
 
 import Foundation
@@ -24,16 +16,12 @@ struct InstallerLeftover: Identifiable, Equatable {
     let name: String
     let path: String
     let sizeBytes: Int64
-    /// Which of the scanned folders this came from, e.g. "Downloads" —
-    /// shown in the UI so a match under Desktop/Documents (which may be
-    /// iCloud-synced, per Casey's Mac) doesn't look like a mystery path.
+    /// Which of the scanned folders this came from, e.g. "Downloads".
     let location: String
 }
 
 enum InstallerScanner {
 
-    /// Leftover installer artifacts, by extension — matches the two file
-    /// types MoleUI's own installer picker flagged live (.dmg and .pkg).
     private static let matchedExtensions: Set<String> = ["dmg", "pkg"]
 
     private static var searchLocations: [(url: URL, label: String)] {
@@ -45,10 +33,8 @@ enum InstallerScanner {
         ]
     }
 
-    /// Synchronous — a top-level (non-recursive) directory listing of three
-    /// folders is fast enough not to need its own background queue hop;
-    /// callers already run this off the main actor via AppViewModel's
-    /// `runTask`, which itself just awaits this call from a `Task`.
+    /// Synchronous — a top-level directory listing of three folders is fast
+    /// enough not to need its own background queue hop.
     static func scan() -> [InstallerLeftover] {
         let fm = FileManager.default
         var results: [InstallerLeftover] = []
@@ -71,11 +57,8 @@ enum InstallerScanner {
         return results.sorted { $0.sizeBytes > $1.sizeBytes }
     }
 
-    /// Moves the given items to the Trash rather than deleting outright —
-    /// recoverable if a selection turns out to include something still
-    /// needed, at the cost of nothing (the app already has Full Disk Access
-    /// and an unsandboxed entitlements file, so this needs no extra
-    /// permission dance).
+    /// Moves to the Trash rather than deleting outright, so a selection that
+    /// turns out to include something still needed is recoverable.
     static func moveToTrash(_ items: [InstallerLeftover]) throws {
         let fm = FileManager.default
         for item in items {

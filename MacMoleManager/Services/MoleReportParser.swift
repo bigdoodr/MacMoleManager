@@ -2,46 +2,25 @@
 //  MoleReportParser.swift
 //  MacStorageManager
 //
-//  Clean/Optimize/Purge dry-run output has no `--json` form — it's plain
-//  text formatted for a terminal. Confirmed live against a real
-//  `mole clean --dry-run` run and a real `mole optimize --dry-run` run —
-//  the two share the same category convention but differ in the details:
+//  Clean/Optimize/Purge dry-run output has no `--json` form — it's plain text:
 //
 //    ➤ Category Name
-//      → Item label · detail text (often ending in a size for Clean, e.g.
-//        "9 items, 408.6MB dry" — Optimize's items are mostly pass/fail
-//        status text with no size at all, e.g. "DNS cache flushed")
-//      ◎ Warning-flavored item — same shape as a "→ " item (Optimize uses
-//        this for things needing attention, e.g. "Broken login item: Ice
-//        (app not found)"), just a different leading glyph
-//        • or further-indented lines — extra detail nested under the item
-//          above (e.g. Clean's Xcode runtime volumes per-volume breakdown)
+//      → Item label · detail text (often ending in a size, e.g. "9 items, 408.6MB dry")
+//      ◎ Warning-flavored item — same shape, different leading glyph
+//        • further-indented lines nested under the item above
 //
 //    ======================================================================
-//    Dry run complete - no changes made                      (Clean's wording)
+//    Dry run complete - no changes made
 //    Potential space: 1.46GB | Items: 103 | Categories: 5     (Clean only)
 //    Would apply 3 optimizations                              (Optimize only)
-//    12 unchanged | 3 skipped | 1 unavailable | 1 need attention | 1 failed
 //    Run without --dry-run to apply these changes
 //    ======================================================================
 //
-//  Optimize's footer has no "key: value" pairs at all — just prose lines —
-//  so `footerNotes` captures the footer verbatim (minus the "Potential
-//  space:" line, which gets its own structured fields) rather than trying
-//  to parse a shape that doesn't exist for every command.
+//  Optimize's footer has no "key: value" pairs, just prose — footerNotes
+//  captures it verbatim minus the "Potential space:" line.
 //
-//  Everything before the first "➤ " category header (whitelist info, the
-//  "system caches need sudo" note, free-space/RAM/uptime line) is kept as
-//  loose header notes rather than discarded, since some of it — particularly
-//  the sudo note — is worth surfacing to explain why a preview might look
-//  partial.
-//
-//  This is a *display* parser only. Mole has no flag to clean/optimize just
-//  one category or item — `mole clean`/`mole optimize` is all-or-nothing —
-//  so the grouped UI built from this is read-only sectioning to match
-//  MoleUI's presentation, not a partial-selection mechanism. (Real per-item
-//  selection would need mole's `--whitelist` support wired up, which is a
-//  separate, still-pending piece of work.)
+//  Display parser only: mole's clean/optimize is all-or-nothing, so the
+//  grouped UI here is read-only sectioning, not a partial-selection mechanism.
 //
 
 import Foundation
@@ -64,32 +43,21 @@ struct MoleReportItem: Identifiable {
 struct MoleReportCategory: Identifiable {
     let id = UUID()
     let name: String
-    // `var`, not `let`: the post-parse pass below back-fills a size for
-    // items (like "Xcode runtime volumes") whose only size figure lives in
-    // a nested detail line rather than on the item's own line — mutating
-    // `categories[ci].items[ii].sizeBytes` needs `items` itself settable.
-    var items: [MoleReportItem]
+    var items: [MoleReportItem] // var: a post-parse pass back-fills sizes from nested detail lines
     var totalSizeBytes: Int64 { items.reduce(0) { $0 + $1.sizeBytes } }
     var hasWarning: Bool { items.contains { $0.isWarning } }
 }
 
 struct MoleReportSummary {
-    /// e.g. "1.46GB" — nil if the footer's "Potential space:" line wasn't
-    /// found (Optimize's footer has no such line at all — see the file
-    /// comment — so this is nil there by design, not a parse failure).
+    /// e.g. "1.46GB" — nil if the footer has no "Potential space:" line (Optimize never does).
     let potentialSpaceDisplay: String?
     let itemCount: Int?
     let categoryCount: Int?
-    /// A specific callout worth surfacing on its own — e.g. "System caches
-    /// need sudo, run sudo -v && mo clean --dry-run for full preview" — so
-    /// the UI can show it as a banner rather than burying it in headerNotes.
+    /// A callout worth surfacing as its own banner, e.g. "System caches need sudo…".
     let partialPreviewNote: String?
-    /// Everything else printed before the first category header (whitelist
-    /// pattern list, free-space line) — shown as loose supporting text.
+    /// Loose text printed before the first category header.
     let headerNotes: [String]
-    /// Footer lines that aren't the structured "Potential space: … | Items:
-    /// … | Categories: …" line — e.g. Optimize's "Would apply 3
-    /// optimizations" and "12 unchanged | 3 skipped | …" summary.
+    /// Footer lines other than the structured "Potential space: … | Items: … | Categories: …" one.
     let footerNotes: [String]
     let categories: [MoleReportCategory]
 
@@ -116,9 +84,7 @@ enum MoleReportParser {
         var itemCount: Int?
         var categoryCount: Int?
 
-        // Moves any nested detail lines collected since the last item onto
-        // that item, since they're only known to belong to it once the
-        // *next* item (or category) line arrives.
+        // Nested detail lines only belong to an item once the next item/category line arrives.
         func flushPendingSubDetails() {
             guard !currentSubDetails.isEmpty, let last = currentItems.popLast() else {
                 currentSubDetails = []
@@ -141,8 +107,6 @@ enum MoleReportParser {
             currentItems = []
         }
 
-        // Shared by "→ " and "◎ " items — same "label · detail" shape,
-        // just a different leading glyph and warning flag.
         func addItem(from body: String, isWarning: Bool) {
             flushPendingSubDetails()
             let comps = body.components(separatedBy: " · ")
@@ -180,25 +144,16 @@ enum MoleReportParser {
                         }
                     }
                 } else if !trimmed.localizedCaseInsensitiveContains("--dry-run") {
-                    // Skips mole's own "Run without --dry-run to apply these
-                    // changes" line — that's a Terminal instruction, and
-                    // this is a GUI app with its own "Clean Now"/"Optimize
-                    // Now" button, so surfacing a CLI command here would
-                    // just confuse someone who's never touched Terminal.
-                    // MoleReportView prints its own "Press <button> to apply
-                    // these changes" line in its place instead.
+                    // Skips mole's "Run without --dry-run…" line; MoleReportView
+                    // shows its own "Press <button>" instruction instead.
                     footerNotes.append(trimmed)
                 }
                 continue
             }
 
-            // "➤ " is checked unconditionally, before the "haven't seen a
-            // category yet" branch below — checking that branch first was a
-            // bug: it swallowed the very first "➤ " line itself into
-            // headerNotes (since sawFirstCategory was still false when that
-            // line arrived), which meant `sawFirstCategory` never actually
-            // flipped true and every single line for the rest of the file —
-            // every real category — fell into the header branch forever.
+            // Must be checked before the "haven't seen a category yet" branch below,
+            // or the first "➤ " line itself gets swallowed into headerNotes and
+            // sawFirstCategory never flips true.
             if trimmed.hasPrefix("➤ ") {
                 flushCategory()
                 currentCategoryName = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
@@ -206,21 +161,13 @@ enum MoleReportParser {
                 continue
             }
 
-            // Anything else before the first category (whitelist info, the
-            // "system caches need sudo" note, Optimize's own "→ DRY RUN
-            // MODE, No files will be modified" banner) is kept as loose
-            // header text rather than parsed as an item.
+            // Anything before the first category is kept as loose header text.
             if !sawFirstCategory {
                 if trimmed.localizedCaseInsensitiveContains("need sudo") {
                     partialPreviewNote = trimmed
                 } else if trimmed != "Clean Your Mac" && trimmed != "Optimize"
                             && !trimmed.hasPrefix("Dry Run Mode") {
-                    // Optimize's own banner line arrives as "→ DRY RUN MODE,
-                    // No files will be modified" — the "→ " here is just
-                    // part of the same generic-bullet convention items use,
-                    // not a real item, so strip it before keeping the line
-                    // as a header note (stripping "◎ " too, on the off
-                    // chance a future command opens with a warning glyph).
+                    // Strip the item-style "→ "/"◎ " bullet Optimize's own banner uses.
                     var note = trimmed
                     for prefix in ["→ ", "◎ "] where note.hasPrefix(prefix) {
                         note = String(note.dropFirst(prefix.count))
@@ -242,16 +189,12 @@ enum MoleReportParser {
                 continue
             }
 
-            // Anything else while inside a category is a nested detail line
-            // under whichever item came last (e.g. the Xcode runtime volume
-            // breakdown lines).
+            // Anything else inside a category is a nested detail line under the last item.
             currentSubDetails.append(trimmed)
         }
         flushCategory()
 
-        // Items like "Xcode runtime volumes · 3 unused, 16 in use" carry no
-        // size on their own line — the real number is in the first nested
-        // detail line ("Runtime volumes total: 57KB …") instead.
+        // Some items carry no size on their own line — it's in the first nested detail line.
         for ci in categories.indices {
             for ii in categories[ci].items.indices {
                 if categories[ci].items[ii].sizeBytes == 0,

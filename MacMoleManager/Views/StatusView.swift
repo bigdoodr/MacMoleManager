@@ -2,10 +2,7 @@
 //  StatusView.swift
 //  MacStorageManager
 //
-//  Replaces MacStorageCheckBeta.sh's "System Status" mode. That mode's
-//  bug ("No status data returned — check the log for details.") was a
-//  symptom of `mole status --json` output surviving a temp-file round
-//  trip through a backgrounded subshell; here it goes straight from
+//  "System Status" mode — `mole status --json` output goes straight from
 //  Process stdout into @Published state.
 //
 

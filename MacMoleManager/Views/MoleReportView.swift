@@ -2,12 +2,10 @@
 //  MoleReportView.swift
 //  MacStorageManager
 //
-//  Shared MoleUI-style collapsible rendering for any MoleReportSummary —
-//  originally built for Clean, factored out here so Optimize (and Purge,
-//  eventually) get the same grouped presentation without duplicating this
-//  layout. Each mode's own View embeds this for its parsed report and adds
-//  only what's specific to it (its own action button, its own live-output
-//  view while scanning, its own raw-output disclosure).
+//  Shared collapsible rendering for any MoleReportSummary, so Clean/Optimize
+//  get the same grouped presentation without duplicating this layout. Each
+//  mode's own View embeds this and adds what's specific to it (action
+//  button, live-output view, raw-output disclosure).
 //
 
 import SwiftUI

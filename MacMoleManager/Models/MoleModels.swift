@@ -2,32 +2,20 @@
 //  MoleModels.swift
 //  MacStorageManager
 //
-//  Decodable shapes for `mole`'s --json output, reconciled against real
-//  output from `mole status --json`, `mole analyze --json <path>`, and
-//  `mole uninstall --list` (all confirmed working as invoked in
-//  MoleRunner.swift). Every field stays optional so an unexpected schema
-//  drift in a future Mole release shows "—" instead of crashing.
+//  Decodable shapes for `mole`'s --json output. Every field stays optional
+//  so an unexpected schema drift in a future Mole release shows "—" instead
+//  of crashing.
 //
 
 import Foundation
 
-// Every Decodable model in this file is explicitly `nonisolated`. The
-// project's default-actor-isolation setting (MainActor) otherwise applies
-// to plain struct declarations too, and Decodable's `init(from:)`
-// requirement is itself a nonisolated protocol requirement — a
-// MainActor-isolated conformance can't satisfy it, which is exactly what
-// surfaced as "Main actor-isolated conformance of 'MoleStatus' to
-// 'Decodable' cannot be used in actor-isolated context" once these types
-// got decoded from MoleRunner's actor-isolated methods. These are pure
-// data models with no reason to be actor-isolated in the first place, so
-// opting the whole type out (rather than patching individual members, as
-// done elsewhere in this codebase for methods that must interoperate with
-// nonisolated callers) is the cleanest fix here.
+// `nonisolated` on every model here: this project defaults struct declarations
+// to @MainActor, but Decodable's init(from:) is a nonisolated protocol
+// requirement, so a MainActor-isolated conformance can't satisfy it once
+// decoded from MoleRunner's actor-isolated methods.
 
 nonisolated struct MoleStatus: Decodable {
-    // Flat properties System Status has always used — untouched by the
-    // richer fields added below for Live Stats, so that tab keeps working
-    // exactly as before.
+    // Flat properties System Status has always used.
     let diskUsedBytes: Int64?
     let diskFreeBytes: Int64?
     let diskTotalBytes: Int64?
@@ -36,10 +24,7 @@ nonisolated struct MoleStatus: Decodable {
     let healthScore: Int?
     let healthScoreMessage: String?
 
-    // Everything below is reconciled against a real `mole status --json`
-    // sample (confirmed live, including a real per-core CPU array, a
-    // populated `top_processes`/`batteries`/`network`, and two CoreSimulator
-    // volumes) for Live Stats.
+    // Everything below is for Live Stats.
     let hostModel: String?
     let cpuModel: String?
     let osVersion: String?
@@ -169,16 +154,12 @@ nonisolated struct MoleStatus: Decodable {
         networkInterfaces = try container.decodeIfPresent([MoleNetworkInterface].self, forKey: .network) ?? []
     }
 
-    /// Non-CoreSimulator disks only, in the order Mole reported them — what
-    /// Live Stats actually lists. See MoleDiskVolume.isCoreSimulatorVolume
-    /// for why this can't just filter on the `external` flag.
+    /// Non-CoreSimulator disks only — see MoleDiskVolume.isCoreSimulatorVolume.
     var displayDisks: [MoleDiskVolume] {
         allDisks.filter { !$0.isCoreSimulatorVolume }
     }
 
-    /// Mole reports one rate per network interface (en0, en4, …) with no
-    /// combined figure — Live Stats shows one Down/Up pair the same way
-    /// Terminal Mole's own dashboard does, so these sum across interfaces.
+    /// Mole reports one rate per interface with no combined figure; these sum across interfaces.
     var totalDownMBs: Double { networkInterfaces.reduce(0) { $0 + ($1.rxRateMBs ?? 0) } }
     var totalUpMBs: Double { networkInterfaces.reduce(0) { $0 + ($1.txRateMBs ?? 0) } }
 }
@@ -199,10 +180,8 @@ nonisolated struct MoleDiskVolume: Decodable, Identifiable {
         case isExternal = "external"
     }
 
-    /// Mole flags Xcode's CoreSimulator disk images as `external: true` too
-    /// — they're mounted the same way a real external drive is — so the
-    /// `external` field alone can't tell "genuinely plugged in" apart from
-    /// "Xcode simulator volume." Path-matching is the only reliable signal.
+    /// Mole flags Xcode's CoreSimulator disk images as `external: true` too, so
+    /// the `external` field alone can't distinguish them from a real external drive.
     var isCoreSimulatorVolume: Bool {
         mount?.contains("CoreSimulator") == true
     }
@@ -331,10 +310,7 @@ nonisolated struct MoleAppEntry: Decodable, Identifiable {
 
 extension Int64 {
     /// Human-readable byte formatting, matching macOS's own Finder-style units.
-    /// `nonisolated` because MoleDeletionEntry.sizeBytesDisplay (a nonisolated
-    /// computed property, per this file's actor-isolation note above) calls
-    /// it — without this, the project's default MainActor isolation applies
-    /// to the extension member too, and that call fails to build.
+    /// `nonisolated` since nonisolated callers like MoleDeletionEntry.sizeBytesDisplay use it.
     nonisolated var formattedBytes: String {
         ByteCountFormatter.string(fromByteCount: self, countStyle: .file)
     }
@@ -342,14 +318,10 @@ extension Int64 {
 
 // MARK: - History
 //
-// Reconciled against a real `mole history --json` sample: a top-level
-// `sessions` array (one entry per past `clean`/`optimize`/`uninstall`/…
-// invocation, with counts but no file-level detail) and a separate
-// `deletions` array (one entry per file actually removed, across all
-// sessions — the two aren't cross-referenced by id in Mole's own output,
-// so this app doesn't try to join them either). `logs`/`limit` in the raw
-// JSON are just paths to Mole's own on-disk log files and the page size
-// mole applied server-side; nothing here needs them.
+// `sessions` is one entry per past clean/optimize/uninstall/… invocation
+// (counts only, no file-level detail); `deletions` is one entry per file
+// actually removed, across all sessions. The two aren't cross-referenced by
+// id in Mole's own output, so this app doesn't join them either.
 
 nonisolated struct MoleHistory: Decodable {
     let sessions: [MoleHistorySession]

@@ -2,10 +2,9 @@
 //  SettingsView.swift
 //  MacStorageManager
 //
-//  Editor for the two Mole config files a Mac admin would otherwise only
-//  reach through `mole clean --whitelist` (a raw-terminal checklist,
-//  confirmed interactive-only live — see MoleConfigStore.swift) or
-//  `mole purge --paths` (which drops straight into vim). Reads/writes
+//  Editor for the two Mole config files otherwise only reachable through
+//  `mole clean --whitelist` (a raw-terminal checklist) or `mole purge --paths`
+//  (drops into vim) — see MoleConfigStore.swift. Reads/writes
 //  ~/.config/mole/whitelist and ~/.config/mole/purge_paths directly.
 //
 

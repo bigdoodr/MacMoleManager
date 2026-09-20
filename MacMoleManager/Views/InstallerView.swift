@@ -3,12 +3,8 @@
 //  MacStorageManager
 //
 //  "Installer Cleanup" mode — a native checklist over InstallerScanner's
-//  FileManager-based scan, not a wrapped mole subcommand. `mole installer`
-//  turned out to be a genuine interactive raw-terminal UI (arrow keys/
-//  space/enter to select items), which a GUI app's Process/Pipe can't
-//  drive — see InstallerScanner.swift for the full story. This view exists
-//  so the same "find leftover .dmg/.pkg installers, let me pick which to
-//  remove" feature works without needing a terminal emulator.
+//  FileManager-based scan, not a wrapped mole subcommand (`mole installer` is
+//  a raw-terminal UI a GUI app's Process/Pipe can't drive — see InstallerScanner.swift).
 //
 
 import SwiftUI

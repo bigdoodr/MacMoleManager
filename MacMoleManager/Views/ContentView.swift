@@ -39,6 +39,12 @@ struct ContentView: View {
         }
         .onAppear { vm.refreshFullDiskAccessState() }
         .task { await vm.refreshMoleInstalledState() }
+        .sheet(isPresented: $vm.showMoleOnboarding) {
+            OnboardingView()
+        }
+        .sheet(item: $vm.pendingElevatedAction) { action in
+            NeedsAdminAccessView(action: action)
+        }
     }
 
     @ViewBuilder
@@ -75,6 +81,7 @@ private struct MoleMissingBanner: View {
                 Text("Mole isn't installed — this app needs it to do anything.")
                     .font(.callout)
                 Spacer()
+                Button("What Is This?") { vm.showMoleOnboarding = true }
                 Button("Install Mole") { Task { await vm.installMole() } }
             }
         }

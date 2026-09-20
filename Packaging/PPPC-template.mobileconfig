@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PPPC-template.mobileconfig
+
+  Starter Privacy Preferences Policy Control (PPPC) profile for
+  MacMoleManager on a managed (Mosyle) fleet. Grants, without a user
+  prompt on the Mac it lands on:
+
+    - Full Disk Access            (SystemPolicyAllFiles)
+    - Control of Finder via Apple Events (AppleEvents → com.apple.finder)
+
+  These are exactly the two prompts the coworker feedback session flagged
+  as confusing when they DO show up (FullDiskAccess.swift's banner, and
+  FinderRevealHelper's priming dialog before the system "wants access to
+  control Finder" dialog). Both are fallbacks for whoever this profile
+  hasn't reached yet — on a Mac that has it, neither ever fires.
+
+  BEFORE UPLOADING TO MOSYLE, replace the two placeholders below:
+
+    __PAYLOAD_UUID_1__, __PAYLOAD_UUID_2__, __TOP_LEVEL_UUID__
+        Any fresh UUIDs (`uuidgen` in Terminal, once per placeholder).
+
+    __CODE_REQUIREMENT__
+        The app's actual code signing requirement string, from a Mac
+        that already has the signed, notarized build installed:
+            codesign -dr - /Applications/MacMoleManager.app
+        Copy everything after "designated => ". Using the wrong
+        requirement here silently fails the grant with no error in the
+        UI — Mosyle's own "Privacy Preferences Policy Control" payload
+        builder will generate this correctly if you'd rather build the
+        profile there instead of hand-editing this file; this template
+        exists mainly so the requirement lives in the repo, not only in
+        the Mosyle console.
+
+  Most MDM consoles (Mosyle included) have a dedicated PPPC payload
+  builder that does the UUID/requirement plumbing for you — treat this
+  file as a reference for exactly which two grants to configure there,
+  not necessarily as something to upload byte-for-byte.
+-->
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.apple.TCC.configuration-profile-policy</string>
+            <key>PayloadIdentifier</key>
+            <string>rocks.scruggsfam.MacMoleManager.pppc.__PAYLOAD_UUID_1__</string>
+            <key>PayloadUUID</key>
+            <string>__PAYLOAD_UUID_1__</string>
+            <key>PayloadDisplayName</key>
+            <string>MacMoleManager — Privacy Preferences</string>
+            <key>PayloadEnabled</key>
+            <true/>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>Services</key>
+            <dict>
+                <key>SystemPolicyAllFiles</key>
+                <array>
+                    <dict>
+                        <key>Identifier</key>
+                        <string>rocks.scruggsfam.MacMoleManager</string>
+                        <key>IdentifierType</key>
+                        <string>bundleID</string>
+                        <key>CodeRequirement</key>
+                        <string>__CODE_REQUIREMENT__</string>
+                        <key>Allowed</key>
+                        <true/>
+                        <key>Authorization</key>
+                        <string>Allow</string>
+                    </dict>
+                </array>
+                <key>AppleEvents</key>
+                <array>
+                    <dict>
+                        <key>Identifier</key>
+                        <string>rocks.scruggsfam.MacMoleManager</string>
+                        <key>IdentifierType</key>
+                        <string>bundleID</string>
+                        <key>CodeRequirement</key>
+                        <string>__CODE_REQUIREMENT__</string>
+                        <key>AEReceiverIdentifier</key>
+                        <string>com.apple.finder</string>
+                        <key>AEReceiverIdentifierType</key>
+                        <string>bundleID</string>
+                        <key>AEReceiverCodeRequirement</key>
+                        <string>identifier "com.apple.finder" and anchor apple</string>
+                        <key>Allowed</key>
+                        <true/>
+                        <key>Authorization</key>
+                        <string>Allow</string>
+                    </dict>
+                </array>
+            </dict>
+        </dict>
+    </array>
+    <key>PayloadDisplayName</key>
+    <string>MacMoleManager PPPC (Full Disk Access + Finder Automation)</string>
+    <key>PayloadIdentifier</key>
+    <string>rocks.scruggsfam.MacMoleManager.pppc.__TOP_LEVEL_UUID__</string>
+    <key>PayloadOrganization</key>
+    <string>Western Kentucky University</string>
+    <key>PayloadScope</key>
+    <string>System</string>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>__TOP_LEVEL_UUID__</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>

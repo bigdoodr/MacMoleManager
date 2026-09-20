@@ -2,12 +2,10 @@
 //  HistoryView.swift
 //  MacStorageManager
 //
-//  "History" mode — wraps `mole history --json`, confirmed against a real
-//  sample from Casey's Mac. Two independent lists straight from Mole's own
-//  JSON: past sessions (one per clean/optimize/uninstall/… run, with
-//  counts but no file-level detail) and individual file deletions. Mole
-//  doesn't cross-reference the two by id, so neither does this view — they're
-//  shown as separate sections rather than joined into one merged timeline.
+//  "History" mode — wraps `mole history --json`. Two independent lists: past
+//  sessions (one per clean/optimize/uninstall/… run) and individual file
+//  deletions. Mole doesn't cross-reference the two by id, so they're shown
+//  as separate sections rather than joined into one merged timeline.
 //
 
 import SwiftUI

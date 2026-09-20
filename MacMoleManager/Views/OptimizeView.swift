@@ -2,14 +2,8 @@
 //  OptimizeView.swift
 //  MacStorageManager
 //
-//  "Optimize" mode — modeled on CleanView's dry-run-then-confirm shape and
-//  now the same MoleUI-style grouped sections via the shared
-//  MoleReportView. Confirmed live: Optimize's output uses the same
-//  "➤ Category / → item" convention Clean does, just with mostly sizeless,
-//  pass/fail-style items ("DNS cache flushed", "Broken login item: Ice (app
-//  not found)") instead of Clean's item counts and byte sizes — and a "◎ "
-//  glyph in place of "→ " for anything that needs the user's attention,
-//  which MoleReportParser surfaces as a warning-styled item. Covers Mole's
+//  "Optimize" mode, modeled on CleanView's dry-run-then-confirm shape and the
+//  same grouped sections via the shared MoleReportView. Covers Mole's
 //  memory/launch-agent/login-item optimization pass.
 //
 //  Read-only grouping, not partial selection — same caveat as Clean:

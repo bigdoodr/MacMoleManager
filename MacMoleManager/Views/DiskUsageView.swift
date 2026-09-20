@@ -2,11 +2,8 @@
 //  DiskUsageView.swift
 //  MacStorageManager
 //
-//  Replaces "Analyze Disk Usage (Home Folder)" mode — the one that hit
-//  swiftDialog's native "Configuration Error / Configuration file not
-//  found" page after a real, multi-minute Mole scan completed. A native
-//  List just renders whatever `analysis.entries` currently holds; there's
-//  no second window reading a JSON file off disk to go wrong.
+//  "Analyze Disk Usage" mode — a native Table renders whatever
+//  `analysis.entries` currently holds.
 //
 
 import SwiftUI

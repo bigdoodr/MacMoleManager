@@ -2,11 +2,9 @@
 //  AboutView.swift
 //  MacStorageManager
 //
-//  Replaces the default macOS "About" panel so we have room for an
-//  Acknowledgments section — this app exists because of the open-source
-//  `mole` CLI it wraps, and the WKU-built tooling it replaces. Opened via
-//  the app's About menu command (see MacStorageManagerApp.swift), which
-//  routes to this instead of the standard orderFrontStandardAboutPanel.
+//  Replaces the default macOS "About" panel so there's room for an
+//  Acknowledgments section. Opened via the app's About menu command (see
+//  MacStorageManagerApp.swift) instead of the standard orderFrontStandardAboutPanel.
 //
 
 import SwiftUI
@@ -57,7 +55,8 @@ struct AboutView: View {
                 )
                 CreditRow(
                     title: "MoleUI",
-                    detail: "tw93's own GUI for Mole — a reference point for how this app groups and presents Mole's results."
+                    detail: "Zhili1004's own GUI for Mole — a reference point for how this app groups and presents Mole's results.",
+                    link: "https://github.com/Zhili1004/MoleUI"
                 )
                 CreditRow(
                     title: "Dan's Disk Management script",

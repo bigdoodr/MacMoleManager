@@ -4,10 +4,7 @@
 //
 //  Central @Published state. Every mode (Status / Analyze / Clean / Uninstall)
 //  reads and writes this one object, so the UI updates the moment mole's
-//  output is decoded — no config file written to /var/tmp for a second
-//  process to poll for, no race between "config written" and "dialog reads
-//  it," which was the root of the recurring "Configuration Error" bug in
-//  MacStorageCheckBeta.sh.
+//  output is decoded.
 //
 
 import Combine
@@ -48,9 +45,8 @@ final class AppViewModel: ObservableObject {
 
     @Published var selectedMode: Mode = .status
     @Published var isBusy = false
-    /// What the busy overlay says while `isBusy` — set per action rather
-    /// than derived from `selectedMode`, since e.g. Clean's dry run and its
-    /// real run are both on the Clean tab but take very different messages.
+    /// What the busy overlay says while `isBusy` — set per action, since a tab's
+    /// dry-run and real-run steps use very different messages.
     @Published var busyMessage = "Working…"
     @Published var errorMessage: String?
     @Published var fullDiskAccessGranted = FullDiskAccess.isGranted()
@@ -68,6 +64,22 @@ final class AppViewModel: ObservableObject {
     @Published var isSubmittingAdminPassword = false
     @Published var adminPasswordError: String?
 
+    /// Which elevated action failed because the account has no admin rights at
+    /// all (distinct from a wrong password) — drives NeedsAdminAccessView.
+    enum PendingElevatedAction: Identifiable, Hashable {
+        case install
+        case update
+        var id: Self { self }
+    }
+    @Published var pendingElevatedAction: PendingElevatedAction?
+    @Published var isRequestingPrivilegesAccess = false
+    @Published var privilegesRequestError: String?
+
+    /// Drives OnboardingView — shown automatically the first time Mole is
+    /// found missing, and reopenable any time from MoleMissingBanner.
+    @Published var showMoleOnboarding = false
+    private static let hasShownMoleOnboardingKey = "AppViewModel.hasShownMoleOnboarding"
+
     // Status
     @Published var status: MoleStatus?
 
@@ -75,9 +87,6 @@ final class AppViewModel: ObservableObject {
     @Published var analysis: MoleAnalysis?
     @Published var analyzeTargetPath = NSHomeDirectory()
     /// Previously-scanned levels, so navigating back doesn't need a rescan.
-    /// `mole analyze` only reports one directory level per call, so drilling
-    /// into a subfolder always costs a fresh scan going forward — but going
-    /// back can just replay what we already have.
     @Published private(set) var analyzeHistory: [(path: String, analysis: MoleAnalysis)] = []
 
     var canNavigateAnalysisBack: Bool { !analyzeHistory.isEmpty }
@@ -85,13 +94,9 @@ final class AppViewModel: ObservableObject {
     // Uninstall
     @Published var installedApps: [MoleAppEntry] = []
     @Published var selectedApp: MoleAppEntry?
-    /// AppCleaner-style per-file leftover breakdown for the selected app —
-    /// found natively via AppLeftoverScanner rather than mole's `uninstall`
-    /// preview. Confirmed live (both `--dry-run` output and `--help`) that
-    /// mole only ever prints a one-line "Matched N app(s)" summary with no
-    /// way to list individual matched paths, so getting AppCleaner's
-    /// granular per-file checklist means finding those files ourselves —
-    /// see AppLeftoverScanner.swift.
+    /// AppCleaner-style per-file leftover breakdown for the selected app, found
+    /// natively via AppLeftoverScanner — mole's own uninstall preview only prints
+    /// a one-line summary with no per-file listing.
     @Published var appLeftovers: [AppLeftoverItem] = []
     @Published var hasScannedLeftovers = false
     @Published var selectedLeftoverIDs: Set<UUID> = []
@@ -105,35 +110,24 @@ final class AppViewModel: ObservableObject {
     // Clean
     @Published var cleanDryRunOutput: String?
     @Published var cleanResultOutput: String?
-    /// `cleanDryRunOutput` parsed into MoleUI-style collapsible sections —
-    /// see MoleReportParser.swift. Read-only grouping; mole has no per-item
-    /// clean flag, so "Clean Now" still runs everything the dry run found.
+    /// `cleanDryRunOutput` parsed into collapsible sections — see MoleReportParser.swift.
     @Published var cleanReport: MoleReportSummary = .empty
-    /// mole's raw stdout for the *in-progress* dry-run scan, updated a few
-    /// times a second while it runs — see `runCleanDryRun()`. The scan can
-    /// take several minutes on a full disk, so this lets CleanView show
-    /// mole's own output scrolling by instead of a bare spinner the whole
-    /// time. Cleared once the scan finishes (the finished, parsed result
-    /// lives in `cleanReport`/`cleanDryRunOutput` from that point on).
+    /// mole's raw stdout for the in-progress dry-run scan, updated live via `runCleanDryRun()`.
+    /// Cleared once the scan finishes and `cleanReport`/`cleanDryRunOutput` take over.
     @Published var cleanLiveOutput = ""
 
     // Optimize
     @Published var optimizeDryRunOutput: String?
     @Published var optimizeResultOutput: String?
-    /// Same grouped-sections treatment as `cleanReport` — see
-    /// MoleReportParser.swift.
     @Published var optimizeReport: MoleReportSummary = .empty
-    /// Same live-while-scanning treatment as `cleanLiveOutput`.
     @Published var optimizeLiveOutput = ""
 
     // Purge
     @Published var purgeDryRunOutput: String?
     @Published var purgeResultOutput: String?
 
-    // Installer cleanup — a native FileManager scan (InstallerScanner), not
-    // a wrapped mole subcommand. `mole installer` turned out to be a real
-    // interactive terminal UI rather than a plain-text preview, so it can't
-    // be captured through Process/Pipe — see InstallerScanner.swift.
+    // Installer cleanup — a native FileManager scan (InstallerScanner), since
+    // `mole installer` is an interactive terminal UI, not a scriptable preview.
     @Published var installerLeftovers: [InstallerLeftover] = []
     @Published var installerHasScanned = false
     @Published var selectedInstallerLeftoverIDs: Set<UUID> = []
@@ -143,27 +137,20 @@ final class AppViewModel: ObservableObject {
     @Published var moleHistory: MoleHistory?
 
     // Live Stats — a continuously-refreshing `mole status --json`, distinct
-    // from the one-shot `status` above so a slow/failing poll here can't
-    // stomp on the System Status tab's own state (or trigger the app-wide
-    // busy overlay/error banner every few seconds while this tab is open).
+    // from the one-shot `status` above so a slow/failing poll here doesn't
+    // affect the System Status tab.
     @Published var liveStatus: MoleStatus?
     @Published var isLiveStatsRunning = false
     @Published var liveStatsErrorMessage: String?
     @Published var liveStatsLastUpdated: Date?
 
-    // Settings — native editing of Mole's own on-disk whitelist and
-    // purge_paths config files, not a wrapped mole subcommand. Both
-    // `mole clean --whitelist` and `mole purge --paths` are genuine
-    // interactive-only experiences (confirmed live: a raw-terminal
-    // checklist, and dropping into vim) — see MoleConfigStore.swift.
+    // Settings — native editing of Mole's own on-disk whitelist and purge_paths
+    // config files, since both `mole clean --whitelist` and `mole purge --paths`
+    // are interactive-only (raw-terminal checklist / vim) — see MoleConfigStore.swift.
     @Published var whitelistSelectedPatterns: Set<String> = []
-    /// Anything already in the saved whitelist file that isn't one of the
-    /// catalog rows in MoleWhitelistCatalog — either a path the user (or
-    /// Mole's own interactive manager) added by hand, or one of the a
-    /// handful of DEFAULT_WHITELIST_PATTERNS entries that don't map onto a
-    /// single catalog row (a broader glob than any one item covers).
-    /// Preserved verbatim rather than dropped, so saving from Settings
-    /// never silently un-protects something.
+    /// Anything in the saved whitelist file that isn't one of the catalog rows in
+    /// MoleWhitelistCatalog. Preserved verbatim so saving from Settings never
+    /// silently un-protects something the user or Mole itself added by hand.
     @Published var whitelistCustomPatterns: [String] = []
     @Published var purgePaths: [String] = []
     @Published var hasLoadedSettings = false
@@ -179,6 +166,17 @@ final class AppViewModel: ObservableObject {
         moleInstalled = await runner.isBinaryAvailable()
         if moleInstalled {
             await refreshMoleVersion()
+        } else if !UserDefaults.standard.bool(forKey: Self.hasShownMoleOnboardingKey) {
+            showMoleOnboarding = true
+        }
+    }
+
+    /// Dismisses OnboardingView. `markSeen` is true for the normal "Not Now"/
+    /// successful-install path so it doesn't reappear on every launch.
+    func dismissMoleOnboarding(markSeen: Bool = true) {
+        showMoleOnboarding = false
+        if markSeen {
+            UserDefaults.standard.set(true, forKey: Self.hasShownMoleOnboardingKey)
         }
     }
 
@@ -186,20 +184,10 @@ final class AppViewModel: ObservableObject {
         moleVersion = try? await runner.version()
     }
 
-    /// Runs Mole's own installer (not a vendored binary) so the app tracks
-    /// Mole's release cadence. On success, immediately loads status so the
-    /// rest of the UI has something to show right away.
-    ///
-    /// Primary path is `runner.install()` — a plain, promptless run that
-    /// works whenever install.sh never needs to elevate. Confirmed live: on
-    /// a Mac that's never had `/usr/local/bin` created (no prior Homebrew or
-    /// Xcode Command Line Tools install), install.sh decides it needs sudo
-    /// and its lock-reauthentication step reads/writes `/dev/tty` directly —
-    /// something a Process/Pipe child has none of, so it fails outright with
-    /// "/dev/tty: Device not configured" rather than a permission error. If
-    /// that happens, fall back to `performElevatedInstall()`, the same
-    /// real-pty-plus-native-dialog approach `updateMole()` already uses for
-    /// its own /dev/tty problem.
+    /// Runs Mole's own installer (not a vendored binary). If the plain
+    /// `runner.install()` fails — e.g. a fresh Mac where install.sh needs sudo
+    /// and can't reach /dev/tty from a Process/Pipe child — falls back to
+    /// `performElevatedInstall()`.
     func installMole() async {
         isInstallingMole = true
         errorMessage = nil
@@ -215,17 +203,14 @@ final class AppViewModel: ObservableObject {
             await refreshMoleVersion()
             await loadStatus()
         } catch {
-            errorMessage = error.localizedDescription
+            handleElevationFailure(error, action: .install)
         }
     }
 
-    /// Pre-authenticates via `sudo -A -v` through AskPassHelper's native
-    /// dialog (Touch ID first, if configured), then runs Mole's install
-    /// script in that same real pty session — install.sh's own internal
-    /// sudo calls (`needs_sudo`/`maybe_sudo`/its lock reauthentication step)
-    /// then find an already-warm ticket and never need to prompt, or touch
-    /// `/dev/tty`, again. Mirrors `performElevatedUpdate()` below exactly,
-    /// just running the installer instead of `mole update`.
+    /// Pre-authenticates via `sudo -A -v` through AskPassHelper's native dialog
+    /// (Touch ID first, if configured), then runs install.sh in that same real
+    /// pty session so its internal sudo calls find an already-warm ticket
+    /// instead of needing `/dev/tty`. Mirrors `performElevatedUpdate()` below.
     private func performElevatedInstall() async throws -> String {
         let scriptPath = try AskPassHelper.write(reason: .install)
         defer { try? FileManager.default.removeItem(atPath: scriptPath) }
@@ -233,20 +218,10 @@ final class AppViewModel: ObservableObject {
         return try await PTYRunner().run(command: command)
     }
 
-    /// `mo update` — moves an already-installed Mole forward to the latest
-    /// stable release, same cadence the standalone CLI itself would use.
-    ///
-    /// Primary path (being live-tested): `performElevatedUpdate()`, which
-    /// runs `sudo -A -v && mole update` inside one real pty session via
-    /// PTYRunner/AskPassHelper — see the doc comments on those two files.
-    /// If that throws, and the install turns out to be Homebrew-managed,
-    /// fall back to `runner.updateViaHomebrew()` (already confirmed working
-    /// standalone) rather than surfacing a regression for the one case
-    /// that was already fixed. The old SecureField/`sudo -S` admin-password
-    /// flow below (`submitAdminPassword`, `update(withAdminPassword:)`,
-    /// `needsAdminPasswordPrompt`/`friendlyAdminError`) is intentionally
-    /// left in place, just unreached from here — an easy revert if the PTY
-    /// path doesn't pan out on first live test.
+    /// `mo update` — moves an already-installed Mole to the latest release.
+    /// Primary path is `performElevatedUpdate()` (sudo -A -v + mole update in
+    /// one pty session). If that throws and the install is Homebrew-managed,
+    /// falls back to `runner.updateViaHomebrew()` instead.
     func updateMole() async {
         isUpdatingMole = true
         errorMessage = nil
@@ -261,21 +236,60 @@ final class AppViewModel: ObservableObject {
                     await refreshMoleVersion()
                     return
                 } catch {
-                    errorMessage = error.localizedDescription
+                    handleElevationFailure(error, action: .update)
                     return
                 }
             }
-            errorMessage = error.localizedDescription
+            handleElevationFailure(error, action: .update)
         }
     }
 
-    /// `sudo -A -v` validates admin credentials via AskPassHelper's native
-    /// password dialog (Touch ID first, if configured) and caches a sudo
-    /// ticket — it does NOT run `mole` itself as root. `mole update` then
-    /// runs unprivileged in that same pty session, so any admin-requiring
-    /// sub-operation it performs internally (including a Homebrew-managed
-    /// `brew upgrade`) uses that already-warmed ticket itself, rather than
-    /// this app running mole (or brew) as root directly.
+    /// Routes "this account has no admin rights at all" to NeedsAdminAccessView
+    /// instead of the plain error banner, since retrying a password can't fix it.
+    private func handleElevationFailure(_ error: Error, action: PendingElevatedAction) {
+        let description = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if AdminAccess.describesMissingAdminRights(description) {
+            pendingElevatedAction = action
+        } else {
+            errorMessage = description
+        }
+    }
+
+    func dismissPendingElevatedAction() {
+        pendingElevatedAction = nil
+        privilegesRequestError = nil
+    }
+
+    /// Retries whichever action (install/update) triggered NeedsAdminAccessView.
+    private func retryPendingElevatedAction() async {
+        guard let action = pendingElevatedAction else { return }
+        pendingElevatedAction = nil
+        switch action {
+        case .install: await installMole()
+        case .update: await updateMole()
+        }
+    }
+
+    /// Called from NeedsAdminAccessView's primary button. On success,
+    /// automatically retries the original install/update.
+    func requestAdminViaPrivileges() async {
+        guard let action = pendingElevatedAction else { return }
+        isRequestingPrivilegesAccess = true
+        privilegesRequestError = nil
+        defer { isRequestingPrivilegesAccess = false }
+        do {
+            try await AdminAccess.requestTemporaryAdmin(
+                reason: "MacMoleManager needs administrator rights to \(action.verb)."
+            )
+            await retryPendingElevatedAction()
+        } catch {
+            privilegesRequestError = error.localizedDescription
+        }
+    }
+
+    /// `sudo -A -v` validates admin credentials via AskPassHelper's native dialog
+    /// and caches a sudo ticket, without running `mole` itself as root. `mole
+    /// update` then runs unprivileged in that same pty session and reuses the ticket.
     private func performElevatedUpdate() async throws -> String {
         let scriptPath = try AskPassHelper.write(reason: .update)
         defer { try? FileManager.default.removeItem(atPath: scriptPath) }
@@ -284,12 +298,9 @@ final class AppViewModel: ObservableObject {
         return try await PTYRunner().run(command: command)
     }
 
-    /// Called from the admin password sheet. Runs `sudo mole update`
-    /// directly with the entered password rather than trying to pre-warm
-    /// sudo's cache in a separate process — see the doc comment on
-    /// `MoleRunner.update(withAdminPassword:)` for why. Stays open with a
-    /// specific error (wrong password vs. not an admin account) on failure
-    /// instead of just dismissing and re-prompting.
+    /// Called from the admin password sheet. Stays open with a specific error
+    /// (wrong password vs. not an admin account) on failure instead of just
+    /// dismissing and re-prompting.
     func submitAdminPassword(_ password: String) async {
         isSubmittingAdminPassword = true
         adminPasswordError = nil
@@ -313,9 +324,8 @@ final class AppViewModel: ObservableObject {
         return description.contains("admin access denied") || description.contains("/dev/tty")
     }
 
-    /// sudo's own wording for these two failure modes is unambiguous enough
-    /// to translate directly, so the sheet can tell "wrong password" apart
-    /// from "this account isn't an admin" instead of just re-prompting blind.
+    /// Translates sudo's own error wording so the sheet can tell "wrong password"
+    /// apart from "this account isn't an admin".
     private static func friendlyAdminError(for error: Error) -> String {
         guard let description = (error as? LocalizedError)?.errorDescription else {
             return error.localizedDescription
@@ -340,17 +350,14 @@ final class AppViewModel: ObservableObject {
     }
 
     /// Entry point for the "Scan" button / typing a new path — treats
-    /// whatever's in `analyzeTargetPath` as a fresh root, discarding any
-    /// drill-down history from a previous browse.
+    /// `analyzeTargetPath` as a fresh root, discarding drill-down history.
     func runAnalysis() async {
         analyzeHistory = []
         await performAnalysis(path: analyzeTargetPath)
     }
 
-    /// Drills into a folder row from the current scan. Mole has no notion of
-    /// a recursive tree in one call, so this is a genuine new `mole analyze`
-    /// invocation — but the current level gets pushed onto history first so
-    /// `navigateAnalysisBack()` can return to it without rescanning.
+    /// Drills into a folder row from the current scan (a fresh `mole analyze`
+    /// call), pushing the current level onto history first.
     func navigateAnalysisInto(_ entry: MoleAnalysisEntry) async {
         guard entry.isDir == true, let path = entry.path else { return }
         if let currentAnalysis = analysis {
@@ -360,8 +367,7 @@ final class AppViewModel: ObservableObject {
         await performAnalysis(path: path)
     }
 
-    /// Pops the last level off history and restores it directly — no rescan,
-    /// since we already have that level's results.
+    /// Pops the last level off history and restores it directly, no rescan needed.
     func navigateAnalysisBack() {
         guard let previous = analyzeHistory.popLast() else { return }
         analyzeTargetPath = previous.path
@@ -392,9 +398,7 @@ final class AppViewModel: ObservableObject {
                 appPath: app.path
             )
             self.appLeftovers = found
-            // Pre-check everything found, matching AppCleaner's default —
-            // the user unchecks anything they'd rather keep instead of
-            // having to hunt down and check every item themselves.
+            // Pre-check everything found; user unchecks anything they'd rather keep.
             self.selectedLeftoverIDs = Set(found.map(\.id))
             self.hasScannedLeftovers = true
         }
@@ -416,10 +420,8 @@ final class AppViewModel: ObservableObject {
         selectedLeftoverIDs.removeAll()
     }
 
-    /// Trashes exactly the checked items — the .app bundle itself included,
-    /// if it's still checked — entirely natively (no mole subcommand
-    /// involved), so what's shown selected in the UI is exactly what gets
-    /// removed.
+    /// Trashes exactly the checked items — the .app bundle itself included, if
+    /// still checked — natively, with no mole subcommand involved.
     func confirmUninstall(_ app: MoleAppEntry) async {
         let toDelete = appLeftovers.filter { selectedLeftoverIDs.contains($0.id) }
         guard !toDelete.isEmpty else { return }
@@ -434,14 +436,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func runCleanDryRun() async {
-        // mole prints its whole report to stdout as it scans — MoleRunner
-        // already drains that continuously to avoid the pipe-buffer deadlock
-        // (see its doc comments), so mirroring the same chunks into a second
-        // buffer here costs nothing extra and lets the view show mole's
-        // output live instead of a bare spinner for however long a full-disk
-        // scan takes. Polled rather than pushed: `ProcessOutputBuffer` is a
-        // plain thread-safe buffer, not a publisher, so this Task just reads
-        // its current text a few times a second while the scan is in flight.
+        // ProcessOutputBuffer isn't a publisher, so this Task polls its current
+        // text a few times a second to show mole's live output during the scan.
         let liveBuffer = ProcessOutputBuffer()
         let pollTask = Task {
             while !Task.isCancelled {
@@ -522,11 +518,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Runs until the calling `.task` is cancelled by SwiftUI — i.e. for as
-    /// long as the Live Stats tab stays selected. Every cycle shells out to
-    /// `mole status --json` again; there's no "watch" flag Mole supports for
-    /// this, so polling a few seconds apart is the only way to get a
-    /// refreshing dashboard rather than a one-shot snapshot.
+    /// Runs until cancelled by SwiftUI's `.task`, i.e. while Live Stats stays
+    /// selected. Mole has no "watch" flag, so this polls `status --json` every few seconds.
     func runLiveStatsLoop() async {
         isLiveStatsRunning = true
         defer { isLiveStatsRunning = false }
@@ -542,15 +535,12 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Loads both config files fresh from disk. Safe to call more than once
-    /// (e.g. re-entering the Settings tab) — always reflects whatever is
-    /// currently on disk rather than stale in-memory state, since Terminal
-    /// `mole` or MoleUI could have changed either file since MMM last read it.
+    /// Loads both config files fresh from disk — safe to call repeatedly, e.g.
+    /// re-entering the Settings tab, in case Terminal `mole` or MoleUI changed either file.
     func loadSettings() {
         let savedWhitelist = Set(MoleConfigStore.loadWhitelistPatterns())
-        // No file yet means Mole is running on its own built-in defaults —
-        // show those as already protected rather than an empty, misleading
-        // checklist.
+        // No file yet means Mole is running on its built-in defaults — show those
+        // as already protected rather than an empty, misleading checklist.
         let effectiveWhitelist = savedWhitelist.isEmpty ? Set(MoleWhitelistCatalog.defaultPatterns) : savedWhitelist
         let catalogPatterns = Set(MoleWhitelistCatalog.items.map(\.expandedPattern))
         whitelistSelectedPatterns = effectiveWhitelist.intersection(catalogPatterns)
@@ -595,9 +585,8 @@ final class AppViewModel: ObservableObject {
         settingsSaveMessage = nil
     }
 
-    /// Writes both config files. Plain synchronous FileManager calls (no
-    /// `mole` subprocess involved), so unlike the rest of this view model
-    /// there's no need to route this through `runTask`'s busy overlay.
+    /// Writes both config files synchronously — no subprocess involved, so no
+    /// need to route through `runTask`'s busy overlay.
     func saveSettings() {
         do {
             try MoleConfigStore.saveWhitelistPatterns(Array(whitelistSelectedPatterns) + whitelistCustomPatterns)
@@ -637,9 +626,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Shared wrapper: sets isBusy/busyMessage, clears/reports errorMessage,
-    /// keeps each call site down to one line instead of repeating do/catch
-    /// everywhere.
+    /// Shared wrapper: sets isBusy/busyMessage, clears/reports errorMessage.
     private func runTask(message: String = "Working…", _ work: @escaping () async throws -> Void) async {
         busyMessage = message
         isBusy = true

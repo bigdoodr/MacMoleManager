@@ -2,18 +2,13 @@
 //  LiveStatsView.swift
 //  MacStorageManager
 //
-//  "Live Stats" mode — the same `mole status --json` System Status already
-//  shows, but refreshed continuously instead of once, and surfacing the
-//  fuller set of fields Terminal Mole's own dashboard and MoleUI display
-//  (per-core CPU, memory cache/available, one tile per real disk volume,
-//  top processes, battery, network) rather than just the six System Status
-//  tiles. Reconciled against a real `mole status --json` sample.
+//  "Live Stats" mode: the same `mole status --json` System Status shows, but
+//  refreshed continuously and surfacing more fields (per-core CPU, memory
+//  cache/available, per-disk tiles, top processes, battery, network).
 //
 //  Uses its own state (AppViewModel.liveStatus, not .status) and polls via
-//  a plain `while !Task.isCancelled` loop tied to this view's `.task` — see
-//  AppViewModel.runLiveStatsLoop(). SwiftUI cancels that task automatically
-//  when the user navigates away, which stops the polling without any
-//  explicit start/stop wiring here.
+//  AppViewModel.runLiveStatsLoop(), tied to this view's `.task` — SwiftUI
+//  cancels that automatically when the user navigates away.
 //
 
 import SwiftUI
@@ -21,9 +16,7 @@ import SwiftUI
 struct LiveStatsView: View {
     @EnvironmentObject var vm: AppViewModel
 
-    // Uptime has its own tile below (Casey's call — it balances the grid
-    // better than cramming it into this line), so the header line sticks to
-    // the static hardware facts that don't change tile-to-tile.
+    // Uptime has its own tile below; this line sticks to static hardware facts.
     private var subtitleLine: String? {
         guard let status = vm.liveStatus else { return nil }
         let parts = [status.hostModel, status.cpuModel, status.osVersion].compactMap { $0 }
@@ -72,21 +65,11 @@ struct LiveStatsView: View {
             if let status = vm.liveStatus {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        // Health/Uptime/CPU/Memory/Power/Network — a fixed
-                        // set of six — share one grid so it divides evenly
-                        // into clean rows with nothing left dangling alone.
-                        // Order matters here as much as membership: a
-                        // LazyVGrid row is only as tall as its tallest cell,
-                        // so a short tile (Health, Uptime) next to a tall one
-                        // (CPU, Memory) leaves visible empty space — pairing
-                        // short-with-short and tall-with-tall keeps rows even.
-                        //
-                        // Disks and Top Processes sit outside this grid: the
-                        // disk count varies (1 on most Macs, more with an
-                        // external drive attached), which would leave an odd
-                        // tile stranded alone in the grid — a single
-                        // full-width card avoids that regardless of count,
-                        // and reads closer to MoleUI's own combined disk box.
+                        // Order matters: a LazyVGrid row is only as tall as its
+                        // tallest cell, so pairing short tiles (Health, Uptime)
+                        // and tall tiles (CPU, Memory) together keeps rows even.
+                        // Disks/Top Processes sit outside this grid since their
+                        // count varies and would leave an odd tile stranded.
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 220))], spacing: 12) {
                             StatTile(title: "Health", value: status.healthScore.map { score in
                                 status.healthScoreMessage.map { "\(score) · \($0)" } ?? "\(score)"
@@ -232,10 +215,8 @@ private struct MemoryTile: View {
     }
 }
 
-/// One combined card for every non-CoreSimulator disk, full width — closer
-/// to MoleUI's own single disk box than a grid of narrow per-volume tiles,
-/// and sidesteps the grid-parity problem a variable disk count would cause
-/// (1 on most Macs, 2+ with an external drive attached).
+/// One combined full-width card for every non-CoreSimulator disk, rather than
+/// a grid of narrow per-volume tiles whose count varies Mac to Mac.
 private struct DisksTile: View {
     let disks: [MoleDiskVolume]
 

@@ -2,10 +2,7 @@
 //  UninstallView.swift
 //  MacStorageManager
 //
-//  Replaces "Uninstall an App" mode — the one MacStorageCheckBeta.sh
-//  actually got working end-to-end most reliably. Same two-step flow
-//  (list → select → preview → confirm) survives the port unchanged;
-//  it's just backed by SwiftUI state instead of a second dialog window.
+//  "Uninstall an App" mode: list apps, select one, preview leftovers, confirm.
 //
 
 import SwiftUI
@@ -17,14 +14,11 @@ struct UninstallView: View {
     @State private var showConfirm = false
     @State private var searchText = ""
     @State private var sortOption: SortOption = .name
-    /// Direction of the current sort. Meaning depends on `sortOption` — see
-    /// `sortDirectionLabel` — and resets to that field's natural default
-    /// (A→Z, largest-first, newest-first) whenever the field changes.
+    /// Meaning depends on `sortOption` — see `sortDirectionLabel` — and resets
+    /// to that field's natural default whenever the field changes.
     @State private var sortAscending = true
-    /// Mole's `uninstall --list` has no install-date field at all, so this
-    /// is read straight off the filesystem (the date each .app bundle was
-    /// added to its containing folder — matches Finder's "Date Added"
-    /// column) rather than anything Mole reports.
+    /// Mole's `uninstall --list` has no install-date field, so this is read
+    /// straight off the filesystem (matches Finder's "Date Added" column).
     @State private var installDates: [String: Date] = [:]
 
     enum SortOption: String, CaseIterable, Identifiable {
@@ -75,30 +69,13 @@ struct UninstallView: View {
     }
 
     var body: some View {
-        // A plain HStack + Divider, not HSplitView. HSplitView is backed by
-        // an AppKit NSSplitView, and this view already sits inside
-        // NavigationSplitView's detail pane — itself NSSplitView-backed.
-        // Nesting one NSSplitView inside another caused exactly the bug
-        // Casey hit live: the two fought over column/divider geometry once
-        // real content forced a resize (selecting an app populates the
-        // preview pane, which has different intrinsic sizing than the
-        // "No app selected" placeholder), and the whole window layout
-        // collapsed, shoving the sidebar almost entirely off-screen. A
-        // fixed-ratio HStack has no independent resize behavior to
-        // conflict with the outer split view, so it can't reproduce this.
+        // Plain HStack + Divider, not HSplitView — nesting an AppKit NSSplitView
+        // inside NavigationSplitView's own NSSplitView-backed detail pane made
+        // the two fight over column geometry on resize and collapse the sidebar.
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                // Under the old HSplitView, this pane's width was negotiated
-                // by AppKit's split view and always had room to spare. The
-                // new HStack pane has a narrower idealWidth (340pt), and
-                // without any hints every child in this row shares shrink
-                // priority equally — so once the Picker + two Buttons ask for
-                // their natural width, SwiftUI compresses the "Installed
-                // Apps" Text to make room, wrapping it character-by-character
-                // instead of eliding. `.fixedSize()` opts the title out of
-                // being compressed (it always renders at its ideal size), and
-                // `.layoutPriority(1)` tells SwiftUI to shrink everything
-                // else in this row first if space is still tight.
+                // Without layoutPriority, the Picker + two Buttons take their natural
+                // width first and SwiftUI compresses "Installed Apps" character-by-character.
                 HStack {
                     Text("Installed Apps")
                         .font(.title2)
@@ -114,9 +91,6 @@ struct UninstallView: View {
                     .pickerStyle(.menu)
                     .frame(width: 130)
                     .onChange(of: sortOption) { _, newValue in
-                        // Each field's natural default: alphabetical goes
-                        // A→Z, but size/date default to the more useful
-                        // "biggest thing to look at first" direction.
                         sortAscending = (newValue == .name)
                     }
                     Button {
@@ -157,12 +131,8 @@ struct UninstallView: View {
                     }
                     .tag(app)
                 }
-                // `List`'s own click handling consumes the tap for its
-                // selection binding before an `.onTapGesture` on the row
-                // ever sees it, so fetching the preview from a tap gesture
-                // never actually ran — react to the selection changing
-                // instead, which fires reliably for both clicks and
-                // keyboard arrow-key navigation.
+                // React to selection change rather than a tap gesture — List's own
+                // click handling consumes the tap before a row-level gesture sees it.
                 .onChange(of: vm.selectedApp) { _, newApp in
                     guard let newApp else { return }
                     Task { await vm.selectApp(newApp) }
@@ -183,14 +153,9 @@ struct UninstallView: View {
                             .font(.headline)
                     }
 
-                    // Every file found here is discovered natively by
-                    // AppLeftoverScanner (Caches, Preferences, Containers,
-                    // Saved Application State, Logs, etc.) rather than
-                    // parsed from mole's output — mole's own uninstall
-                    // preview is just a one-line summary with no per-file
-                    // detail. This is the AppCleaner-style breakdown Casey
-                    // asked for: every match gets its own checkbox, size,
-                    // and reveal-in-Finder button.
+                    // Discovered natively by AppLeftoverScanner (Caches, Preferences,
+                    // Containers, Logs, etc.) — mole's own uninstall preview is just a
+                    // one-line summary with no per-file detail.
                     if !vm.hasScannedLeftovers {
                         ContentUnavailableView {
                             Label("Looking for leftover files…", systemImage: "magnifyingglass")
@@ -232,7 +197,7 @@ struct UninstallView: View {
                                 Text(item.sizeBytes.formattedBytes)
                                     .foregroundStyle(.secondary)
                                 Button {
-                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
+                                    FinderRevealHelper.reveal(URL(fileURLWithPath: item.path))
                                 } label: {
                                     Image(systemName: "arrow.up.forward.square")
                                 }
@@ -301,19 +266,13 @@ extension MoleAppEntry: Hashable {
 }
 
 /// Reads an app's real .icns icon straight off disk via NSWorkspace — the
-/// same icon Finder shows for that bundle — rather than a generic SF Symbol
-/// placeholder. `NSWorkspace.icon(forFile:)` never returns nil; a bad or
-/// missing path just falls back to the generic document icon on its own,
-/// so there's no error case to handle here.
+/// same icon Finder shows for that bundle. `icon(forFile:)` never returns nil;
+/// a bad path just falls back to the generic document icon.
 private struct AppIconView: View {
     let path: String?
     var size: CGFloat = 28
 
     var body: some View {
-        // `icon(forFileType:)` (the string-based API, e.g. "app") was
-        // deprecated in macOS 12 in favor of the UTType-based overload —
-        // this only matters for the no-path fallback case, since
-        // `icon(forFile:)` (used whenever a real path is known) is untouched.
         Image(nsImage: path.map { NSWorkspace.shared.icon(forFile: $0) } ?? NSWorkspace.shared.icon(for: .applicationBundle))
             .resizable()
             .frame(width: size, height: size)

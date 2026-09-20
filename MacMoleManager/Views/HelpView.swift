@@ -2,10 +2,9 @@
 //  HelpView.swift
 //  MacStorageManager
 //
-//  Replaces the default "Help isn't available" Help-menu behavior (the app
-//  has no CFBundleHelpBookName registered, and never needs one — this is a
-//  plain SwiftUI window instead of an HTML help book). Opened via the
-//  Help menu's "MacMoleManager Help" command, see MacStorageManagerApp.swift.
+//  Replaces the default "Help isn't available" Help-menu behavior with a
+//  plain SwiftUI window. Opened via the Help menu's "MacMoleManager Help"
+//  command — see MacStorageManagerApp.swift.
 //
 
 import SwiftUI

@@ -3,15 +3,11 @@
 //  MacStorageManager
 //
 //  Writes a one-time-use "askpass" helper script that pops a native macOS
-//  password dialog via `osascript` — the same technique MoleUI
-//  (github.com/Zhili1004/MoleUI, another GUI for the `mole` CLI) uses for
-//  its own admin-elevation flow (`ensure_askpass` in its Rust backend).
-//
-//  `sudo -A` invokes whatever script `SUDO_ASKPASS` points to instead of
-//  trying — and, with no controlling terminal, failing — to read a
-//  password from `/dev/tty` itself. If the Mac has Touch ID configured for
-//  sudo (`pam_tid.so` in /etc/pam.d/sudo or sudo_local), PAM tries that
-//  first and this script's dialog is only shown as the fallback.
+//  password dialog via `osascript`. `sudo -A` invokes whatever script
+//  `SUDO_ASKPASS` points to instead of trying (and failing, with no
+//  controlling terminal) to read a password from `/dev/tty` itself. If Touch
+//  ID is configured for sudo, PAM tries that first and this dialog only
+//  shows as the fallback.
 //
 
 import Foundation

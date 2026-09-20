@@ -3,15 +3,10 @@
 //  MacStorageManager
 //
 //  There's no public API to directly query Full Disk Access state. The
-//  standard technique (used by AppCleaner-style tools) is to attempt a
-//  read of a TCC-protected location and treat failure as "not granted."
-//  ~/Library/Mail is a reliable probe: it exists on every Mac with Mail
-//  ever opened once, or falls back to another protected path if absent.
-//
-//  For a fleet deploy, the cleaner path is a Mosyle-pushed PPPC profile
-//  granting Full Disk Access to this app's bundle ID up front, so most
-//  users never see the manual prompt at all — this in-app check/prompt
-//  is the fallback for whoever isn't covered by the profile yet.
+//  standard technique (used by AppCleaner-style tools) is to attempt a read
+//  of a TCC-protected location and treat failure as "not granted."
+//  ~/Library/Mail is a reliable probe on any Mac that's opened Mail once,
+//  falling back to another protected path if absent.
 //
 
 import Foundation

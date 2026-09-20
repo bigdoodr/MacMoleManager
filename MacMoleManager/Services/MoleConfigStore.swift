@@ -3,19 +3,14 @@
 //  MacStorageManager
 //
 //  Native reader/writer for Mole's own on-disk config files — no `mole`
-//  subprocess involved. `mole clean --whitelist` and `mole purge --paths`
-//  both turned out (confirmed live) to be genuine interactive-only
-//  experiences — a raw-terminal checklist, and dropping straight into vim,
-//  respectively — the same category of limitation as `mole installer` (see
-//  InstallerScanner.swift's doc comment for that story). Settings edits
-//  these two files directly instead of trying to drive either interactive
-//  command through Process/Pipe.
+//  subprocess involved. `mole clean --whitelist` and `mole purge --paths` are
+//  both interactive-only (a raw-terminal checklist, and dropping into vim,
+//  respectively — the same limitation as `mole installer`, see
+//  InstallerScanner.swift), so Settings edits these files directly instead.
 //
-//  File formats and header text below are confirmed against Casey's real
-//  ~/.config/mole/whitelist and ~/.config/mole/purge_paths samples, and
-//  against Mole's own source — lib/manage/whitelist.sh, lib/core/base.sh,
-//  bin/clean.sh, at commit 650ec4202343542e86b09c451a75bd6c171b5b6e on
-//  tw93/Mole — not guessed.
+//  File formats/header text match Mole's own source — lib/manage/whitelist.sh,
+//  lib/core/base.sh, bin/clean.sh, commit 650ec4202343542e86b09c451a75bd6c171b5b6e
+//  on tw93/Mole.
 //
 
 import Foundation
@@ -39,20 +34,15 @@ enum MoleConfigStore {
     static let finderMetadataSentinel = "FINDER_METADATA"
 
     /// Raw pattern lines from `~/.config/mole/whitelist` — comment (#) and
-    /// blank lines skipped, the same parsing Mole's own `load_mole_whitelist`
-    /// (lib/core/base.sh) does. Empty if the file doesn't exist yet — Mole
-    /// falls back to its own built-in defaults in that case, mirrored here
-    /// by MoleWhitelistCatalog.defaultPatterns.
+    /// blank lines skipped, same as `load_mole_whitelist` (lib/core/base.sh).
+    /// Empty if the file doesn't exist yet; MoleWhitelistCatalog.defaultPatterns
+    /// mirrors Mole's own built-in fallback for that case.
     static func loadWhitelistPatterns() -> [String] {
         loadPatternLines(from: whitelistFile)
     }
 
-    /// Writes the whitelist file with the exact header text Mole's own
-    /// `save_whitelist_patterns` (lib/manage/whitelist.sh) writes for clean
-    /// mode, so a file MMM saves reads identically to one Mole's own
-    /// interactive manager would have produced. Replaces the file's whole
-    /// pattern list — matches Mole's own "replacement semantics," not an
-    /// append.
+    /// Replaces the file's whole pattern list, matching Mole's own
+    /// `save_whitelist_patterns` header text and replacement semantics.
     static func saveWhitelistPatterns(_ patterns: [String]) throws {
         let header = """
         # Mole Whitelist - Protected paths won't be deleted
@@ -64,10 +54,9 @@ enum MoleConfigStore {
 
     // MARK: - Purge Paths
 
-    /// `~/.config/mole/purge_paths` — one filesystem path per line,
-    /// supporting `~` for the home directory. Left un-expanded here (unlike
-    /// whitelist patterns) so a round-trip edit looks exactly like Casey's
-    /// real sample did (`~/Library/CloudStorage`), not a fully-qualified path.
+    /// `~/.config/mole/purge_paths` — one filesystem path per line, supporting
+    /// `~` for home. Left un-expanded (unlike whitelist patterns) so a
+    /// round-trip edit stays `~/...` rather than a fully-qualified path.
     static func loadPurgePaths() -> [String] {
         loadPatternLines(from: purgePathsFile)
     }

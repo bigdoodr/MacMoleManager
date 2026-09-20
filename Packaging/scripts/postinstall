@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# postinstall — runs as root, once, at the end of `installer`/Self Service
+# installing MacMoleManager.pkg.
+#
+# Scope, deliberately kept narrow (see ../README.md for the reasoning):
+#   1. Pre-install Mole for the logged-in console user, so first launch
+#      doesn't need to run the in-app "Install Mole" flow at all.
+#   2. If this Mac isn't MDM-managed (no PPPC profile is coming), open the
+#      Full Disk Access pane for the console user so the in-app prompt
+#      (FullDiskAccess.swift) has less distance to cover — it still does
+#      the explaining, this just saves a trip through System Settings' nav.
+#   3. Log, not act, on the two things this script genuinely cannot do:
+#      grant FDA/Automation TCC access, or grant admin rights. Those need
+#      a pushed PPPC profile and Privileges, respectively — see the app's
+#      own AdminAccess.swift / FinderRevealHelper.swift for the runtime
+#      fallback when neither is present yet.
+#
+# Exits 0 unconditionally past setup — a hiccup here shouldn't fail the
+# whole package install; every step it attempts also has an in-app
+# fallback if it does nothing.
+
+set -u
+LOG_TAG="MacMoleManager postinstall"
+log() { /usr/bin/logger -t "$LOG_TAG" "$1"; echo "$LOG_TAG: $1"; }
+
+CONSOLE_USER="$(/usr/bin/stat -f%Su /dev/console)"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ] || [ "$CONSOLE_USER" = "loginwindow" ]; then
+    log "No console user detected (running at login window or via remote install) — skipping user-context steps."
+    exit 0
+fi
+CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null || echo "")"
+
+run_as_console_user() {
+    # launchctl asuser gets a real user session context (Aqua bootstrap),
+    # not just the right uid — needed for anything that talks to
+    # WindowServer/System Settings, same as `open` below.
+    /bin/launchctl asuser "$CONSOLE_UID" sudo -u "$CONSOLE_USER" "$@"
+}
+
+# --- 1. Pre-install Mole -----------------------------------------------
+if [ ! -x /usr/local/bin/mole ] && ! command -v mole >/dev/null 2>&1; then
+    log "Mole not found — running its official installer as $CONSOLE_USER."
+    # Mole's install script (mole.fit) is the same one MoleRunner.swift's
+    # installScriptCommand runs from inside the app — kept in sync by
+    # hand since it's a one-line curl|bash and not worth vendoring here.
+    if run_as_console_user /bin/bash -c 'curl -fsSL https://mole.fit/install.sh | bash' >/tmp/mmm-mole-install.log 2>&1; then
+        log "Mole installed successfully."
+    else
+        log "Mole install script failed or needed sudo it didn't have as a plain user — leaving it to MacMoleManager's in-app installer on first launch. See /tmp/mmm-mole-install.log."
+    fi
+else
+    log "Mole already present — skipping."
+fi
+
+# --- 2. Full Disk Access: open the pane if this Mac looks unmanaged ----
+MDM_STATUS="$(/usr/bin/profiles status -type enrollment 2>/dev/null | /usr/bin/grep -i "MDM enrollment" || true)"
+if echo "$MDM_STATUS" | /usr/bin/grep -qi "Yes"; then
+    log "Mac is MDM-enrolled ($MDM_STATUS) — assuming a PPPC profile handles Full Disk Access and Finder Automation; not opening System Settings. See Packaging/PPPC-template.mobileconfig if that profile isn't deployed yet."
+else
+    log "Mac does not appear to be MDM-enrolled — opening Full Disk Access settings for $CONSOLE_USER so it's one click away after first launch."
+    run_as_console_user /usr/bin/open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" || \
+        log "Couldn't open System Settings for $CONSOLE_USER (non-fatal)."
+fi
+
+# --- 3. Launch the app so onboarding/FDA prompts pick up immediately --
+run_as_console_user /usr/bin/open -a "/Applications/MacMoleManager.app" || \
+    log "Couldn't launch MacMoleManager for $CONSOLE_USER (non-fatal) — it'll be in Applications either way."
+
+exit 0

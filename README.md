@@ -27,6 +27,11 @@ A native macOS app that wraps [Mole](https://github.com/tw93/Mole) — the open-
 2. Set your own signing team under Signing & Capabilities.
 3. Build and run (⌘R).
 
+For a distributable, fleet-deployable `.pkg` (with Mole pre-installed via
+a postinstall script, and an optional PPPC profile for zero-prompt Full
+Disk Access / Finder automation on managed Macs), see
+[`Packaging/README.md`](Packaging/README.md).
+
 App Sandbox is intentionally off — MacMoleManager shells out to an external CLI and needs broad filesystem access under Full Disk Access, which isn't compatible with the sandbox's container model. This is why the app is distributed outside the Mac App Store, via direct download / your own Developer ID signing.
 
 ## How it works
@@ -47,6 +52,7 @@ Either way, the files on disk are the same ones Mole itself reads, so changes ma
 This app exists because of work other people in the Mac admin community did first:
 
 - **[Mole](https://github.com/tw93/Mole)** by [tw93](https://github.com/tw93) — the CLI this app is a GUI for. All cleaning, analysis, and uninstall logic belongs to that project.
+- **[Privileges](https://github.com/SAP/macOS-enterprise-privileges)** by SAP — the standard self-service temporary-admin tool on managed fleets. When it's installed, MacMoleManager's admin-access flow drives it directly via its bundled CLI instead of just failing with a raw `sudo` error (see `Services/AdminAccess.swift`).
 - **[MoleUI](https://github.com/Zhili1004/MoleUI)** — Zhili1004's GUI for Mole, a reference point for how this app groups and presents Mole's results (the tile layout in System Status/Live Stats, the collapsible sections in Clean/Optimize).
 - **["Discovering Mole: A Command-Line Utility for Mac Cleaning"](https://jonbrown.org/blog/discovering-mole-a-command-line-utility-for-mac-cleaning/)** by Jon Brown — the writeup that introduced me to Mole as a tool worth building around.
 - **[Dan Snelson's Disk Usage script](https://github.com/dan-snelson/dialog-scripts/tree/main/Disk%20Usage)** by Dan K. Snelson — the original bash-based tool that I used for my org's Mac Fleet. See also his writeup, **["Disk Usage with swiftDialog"](https://snelson.us/2022/11/disk-usage-with-swiftdialog-0-0-2/)**.

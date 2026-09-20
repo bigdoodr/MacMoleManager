@@ -2,27 +2,16 @@
 //  AppLeftoverScanner.swift
 //  MacStorageManager
 //
-//  AppCleaner-style per-file uninstall breakdown. `mole uninstall` was
-//  confirmed live (both `--dry-run` output and `--help`) to only ever print
-//  a one-line "Matched N app(s): ... | Last: Nd ago" summary — there's no
-//  flag to list the individual files it would remove, so matching
-//  AppCleaner's granular checklist means finding those files ourselves.
+//  AppCleaner-style per-file uninstall breakdown. `mole uninstall` only ever
+//  prints a one-line summary with no per-file listing, so this scans the
+//  standard macOS leftover locations itself, matched primarily by bundle
+//  identifier and falling back to a substring match on the app's full display
+//  name. Matching the full name (not a single vendor word) is deliberate —
+//  it keeps "Microsoft Outlook" from also flagging a shared "Microsoft"
+//  folder that Word/Excel/Teams live in; under-matching is a safer failure
+//  mode here than trashing another app's data.
 //
-//  This scans the standard macOS locations apps leave things behind in —
-//  the same categories AppCleaner itself checks — matched primarily by
-//  bundle identifier (the one truly reliable key: Caches/Containers/
-//  Preferences folders are almost always named after it) and falling back
-//  to a substring match on the app's full display name for locations keyed
-//  by name instead. Matching against the *full* app name rather than a
-//  single vendor word is deliberate: it's what keeps something like
-//  "Microsoft Outlook" from also flagging a shared "Microsoft" vendor
-//  folder that Word/Excel/Teams also live in — under-matching (missing an
-//  odd leftover) is a far safer failure mode here than over-matching
-//  (offering to trash another app's data).
-//
-//  Deletion goes straight to FileManager.trashItem, same as
-//  InstallerScanner — this uses no mole subcommand at all, so what's
-//  checked in the UI is exactly what gets removed.
+//  Deletion goes straight to FileManager.trashItem, no mole subcommand involved.
 //
 
 import Foundation

@@ -2,27 +2,17 @@
 //  MoleWhitelistCatalog.swift
 //  MacStorageManager
 //
-//  The ~70-item menu Mole's own interactive `mole clean --whitelist`
-//  presents — ported verbatim (display name, pattern, category, in the same
-//  order) from `get_all_cache_items()` in lib/manage/whitelist.sh, plus the
-//  Finder-metadata sentinel row that same file appends afterward with
-//  `echo`. Source: tw93/Mole, commit 650ec4202343542e86b09c451a75bd6c171b5b6e.
-//  Guessing at any of these labels/patterns risks protecting the wrong
-//  thing (or nothing), so this is copied, not reconstructed from memory.
+//  The menu Mole's own interactive `mole clean --whitelist` presents, ported
+//  verbatim (name, pattern, category, order) from `get_all_cache_items()` in
+//  lib/manage/whitelist.sh. Source: tw93/Mole, commit 650ec4202343542e86b09c451a75bd6c171b5b6e.
 //
-//  Left out on purpose: four dynamic rows (Go build cache, Go module cache,
-//  GitHub CLI cache, Clang module cache) that same function only adds when
-//  it can actually detect the underlying tool on the Mac (`go env`, `gh`,
-//  a resolved DARWIN_USER_CACHE_DIR). Reimplementing that detection for
-//  four edge-case rows wasn't worth it — anyone who wants one of those
-//  protected can still add its path manually below.
+//  Left out on purpose: four dynamic rows (Go/GitHub CLI/Clang caches) that
+//  script only adds when it detects the underlying tool on the Mac. Anyone
+//  who wants one protected can add its path manually below.
 //
-//  Patterns keep Mole's own literal "$HOME" text as authored in its source;
-//  `expandedPattern` swaps that for the real home directory at load/save
-//  time, mirroring `pattern="${pattern/\$HOME/$HOME}"` in whitelist.sh's
-//  own interactive menu (confirmed live — that's the point in the script
-//  where a catalog pattern turns into the actual string Mole compares
-//  against and eventually saves).
+//  Patterns keep Mole's literal "$HOME" text as authored; `expandedPattern`
+//  swaps that for the real home directory at load/save time, mirroring
+//  whitelist.sh's own `pattern="${pattern/\$HOME/$HOME}"`.
 //
 
 import Foundation
@@ -35,13 +25,9 @@ struct WhitelistCatalogItem: Identifiable, Hashable {
     let rawPattern: String
     let category: WhitelistCategory
     /// Mole force-merges a small set of hard-safety patterns into every
-    /// whitelist file regardless of what the user picks
-    /// (lib/core/base.sh's `SAFETY_WHITELIST_PATTERNS` /
-    /// `ensure_safety_whitelist_patterns`) — these four catalog rows are the
-    /// closest match to that set. Unchecking one in MMM would be cosmetic,
-    /// since Mole silently re-adds its own version the next time it runs,
-    /// so it's shown checked and disabled here rather than pretending it's
-    /// optional.
+    /// whitelist file regardless of user choice (lib/core/base.sh's
+    /// `SAFETY_WHITELIST_PATTERNS`); these rows are the closest match, shown
+    /// checked and disabled since unchecking one would be purely cosmetic.
     let isAlwaysProtected: Bool
 
     var id: String { rawPattern }
@@ -154,21 +140,13 @@ enum MoleWhitelistCatalog {
         WhitelistCatalogItem(name: name, rawPattern: pattern, category: category, isAlwaysProtected: alwaysProtected)
     }
 
-    /// Derived, not hand-duplicated, from the four rows above marked
-    /// `alwaysProtected: true` — see that flag's doc comment for what "always
-    /// protected" actually means (Mole enforces its own similar hard-safety
-    /// patterns underneath regardless of this file's contents; these are the
-    /// catalog's closest match, locked so the checklist doesn't imply
-    /// they're removable).
     static var alwaysProtectedPatterns: Set<String> {
         Set(items.filter(\.isAlwaysProtected).map(\.expandedPattern))
     }
 
     /// What a brand-new Mole install protects before any whitelist file
-    /// exists yet — `DEFAULT_WHITELIST_PATTERNS` in lib/core/base.sh,
-    /// expanded the same way catalog patterns are. Used so Settings shows
-    /// these as already-checked when it finds no whitelist file, instead of
-    /// the checklist looking like nothing is protected.
+    /// exists — `DEFAULT_WHITELIST_PATTERNS` in lib/core/base.sh. Used so
+    /// Settings shows these as already-checked rather than nothing protected.
     static let defaultPatterns: [String] = [
         "$HOME/Library/Caches/ms-playwright*",
         "$HOME/.gradle/caches/*",
