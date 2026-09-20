@@ -26,7 +26,7 @@ enum AdminAccess {
         guard let gr = getgrnam("admin") else { return true }
         if pw.pointee.pw_gid == gr.pointee.gr_gid { return true }
         let username = String(cString: pw.pointee.pw_name)
-        var member = gr.pointee.gr_mem
+        guard var member = gr.pointee.gr_mem else { return false }
         while let namePtr = member.pointee {
             if String(cString: namePtr) == username { return true }
             member = member.advanced(by: 1)
