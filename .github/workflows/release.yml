@@ -1,0 +1,196 @@
+name: Release
+
+# Fires only on a pushed version tag (v1.0.3, etc.) — never on an ordinary
+# commit to main. Cut a release with:
+#   git tag v1.0.3 && git push origin v1.0.3
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  SCHEME: MacMoleManager
+  PROJECT: MacMoleManager.xcodeproj
+  BUNDLE_ID: rocks.scruggsfam.MacMoleManager
+  TEAM_ID: C7ZFPH2CB5
+
+jobs:
+  release:
+    # If this runner's Xcode is older than the project's MACOSX_DEPLOYMENT_TARGET,
+    # the "Select latest available Xcode" step below fails fast with a clear
+    # message instead of a confusing SDK error buried in the archive step.
+    # Swap this one line for your own self-hosted runner's label if GitHub's
+    # hosted image hasn't caught up to the Xcode version this project needs yet.
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        run: |
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST_XCODE" ]; then
+            echo "No Xcode installation found on this runner." >&2
+            exit 1
+          fi
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE"
+          xcodebuild -version
+
+      - name: Derive release version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Releasing version $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check for release notes
+        run: |
+          NOTES_PATH="Packaging/release-notes/${{ github.ref_name }}.md"
+          if [ ! -f "$NOTES_PATH" ]; then
+            echo "No release notes file at $NOTES_PATH — commit one before tagging (see README's Releasing section) and push the tag again." >&2
+            exit 1
+          fi
+
+      - name: Import signing certificates into a temporary keychain
+        env:
+          APP_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          APP_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          INSTALLER_P12_BASE64: ${{ secrets.DEVELOPER_ID_INSTALLER_P12_BASE64 }}
+          INSTALLER_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.CI_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Longer than this job's timeout-minutes, so the keychain can never
+          # auto-lock mid-job (e.g. while notarytool --wait is polling Apple).
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APP_P12_BASE64" | base64 --decode -o "$RUNNER_TEMP/app.p12"
+          echo "$INSTALLER_P12_BASE64" | base64 --decode -o "$RUNNER_TEMP/installer.p12"
+
+          security import "$RUNNER_TEMP/app.p12" -P "$APP_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/installer.p12" -P "$INSTALLER_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
+
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/"//g')
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Resolve signing identities
+        run: |
+          APP_IDENTITY=$(security find-identity -v -p basic "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          INSTALLER_IDENTITY=$(security find-identity -v -p basic "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+
+          if [ -z "$APP_IDENTITY" ] || [ -z "$INSTALLER_IDENTITY" ]; then
+            echo "Couldn't find both a 'Developer ID Application' and a 'Developer ID Installer' identity in the imported certificates." >&2
+            exit 1
+          fi
+
+          echo "Application identity: $APP_IDENTITY"
+          echo "Installer identity: $INSTALLER_IDENTITY"
+          echo "APP_IDENTITY=$APP_IDENTITY" >> "$GITHUB_ENV"
+          echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            -destination "generic/platform=macOS" \
+            CODE_SIGN_STYLE=Manual \
+            "CODE_SIGN_IDENTITY=$APP_IDENTITY" \
+            "DEVELOPMENT_TEAM=$TEAM_ID" \
+            "MARKETING_VERSION=${{ steps.version.outputs.version }}" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp"
+
+      - name: Export signed app
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "Packaging/ExportOptions.plist"
+
+      - name: Notarize and staple the app
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode -o "$RUNNER_TEMP/AuthKey.p8"
+
+          APP_PATH="$RUNNER_TEMP/export/$SCHEME.app"
+          ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/app-for-notarizing.zip"
+
+          xcrun notarytool submit "$RUNNER_TEMP/app-for-notarizing.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple "$APP_PATH"
+
+      - name: Build zip release asset
+        id: zip
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_PATH="$RUNNER_TEMP/$SCHEME-$VERSION.zip"
+          ditto -c -k --keepParent "$RUNNER_TEMP/export/$SCHEME.app" "$ZIP_PATH"
+          echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Build and sign pkg
+        id: pkg
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          COMPONENT_PKG="$RUNNER_TEMP/$SCHEME-component.pkg"
+          SIGNED_PKG="$RUNNER_TEMP/$SCHEME-$VERSION.pkg"
+
+          pkgbuild \
+            --root "$RUNNER_TEMP/export" \
+            --install-location "/Applications" \
+            --scripts "Packaging/scripts" \
+            --identifier "$BUNDLE_ID.pkg" \
+            --version "$VERSION" \
+            "$COMPONENT_PKG"
+
+          productsign --sign "$INSTALLER_IDENTITY" "$COMPONENT_PKG" "$SIGNED_PKG"
+          echo "path=$SIGNED_PKG" >> "$GITHUB_OUTPUT"
+
+      - name: Notarize and staple the pkg
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          PKG_PATH="${{ steps.pkg.outputs.path }}"
+
+          xcrun notarytool submit "$PKG_PATH" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple "$PKG_PATH"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.zip.outputs.path }}" \
+            "${{ steps.pkg.outputs.path }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file "Packaging/release-notes/${{ github.ref_name }}.md"
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_PATH" || true

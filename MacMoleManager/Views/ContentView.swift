@@ -109,6 +109,7 @@ private struct FullDiskAccessBanner: View {
 }
 
 private struct ErrorBanner: View {
+    @EnvironmentObject var vm: AppViewModel
     let message: String
 
     var body: some View {
@@ -119,6 +120,21 @@ private struct ErrorBanner: View {
                 .font(.callout)
                 .textSelection(.enabled)
             Spacer()
+            if vm.moleInstallNeedsRepair {
+                if vm.isRepairingMoleInstall {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("Reinstall via Homebrew") { Task { await vm.repairMoleInstall() } }
+                }
+            } else if vm.moleHomebrewRepairFailed {
+                if vm.isInstallingMole {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("Install Mole Directly") { Task { await vm.installMole() } }
+                }
+            }
         }
         .padding(10)
         .background(.red.opacity(0.12))

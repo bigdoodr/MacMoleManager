@@ -31,6 +31,23 @@ For a distributable, fleet-deployable `.pkg` (with Mole pre-installed via a post
 
 App Sandbox is intentionally off, since MacMoleManager shells out to an external CLI and needs Full Disk Access. This is why the app is distributed outside the Mac App Store, via direct download / your own Developer ID signing.
 
+## Releasing
+
+Pushing a version tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds, signs, notarizes, and publishes a GitHub release automatically — see [`Packaging/README.md`](Packaging/README.md) for how the signing/notarization secrets are set up.
+
+1. Make sure everything you want in the release is committed and pushed to `main`.
+2. Write release notes to `Packaging/release-notes/vX.Y.Z.md` (matching the tag you're about to push) and commit it. The workflow refuses to run without this file — this repo has no pull-request history for GitHub's auto-generated notes to summarize, so notes are written by hand (or by asking Claude to draft them from the commits/diffs since the last tag) instead.
+3. Tag and push:
+   ```sh
+   git tag v1.0.3
+   git push origin v1.0.3
+   ```
+4. That's it. The workflow archives the app, signs it with your Developer ID Application identity, notarizes and staples it, zips it, then separately builds, signs (Developer ID Installer), notarizes, and staples a `.pkg`. Both land as assets on a new GitHub release for that tag, with the body of `Packaging/release-notes/vX.Y.Z.md` as the release notes.
+
+The version shown inside the app (`MARKETING_VERSION`) is set from the tag at build time, not from the Xcode project file — so the tag you push is the version that ships, even if the project's own version field hasn't been bumped.
+
+If the release workflow fails at the archive step citing a missing SDK, GitHub's hosted macOS runner likely hasn't caught up to the Xcode version this project needs yet (`MACOSX_DEPLOYMENT_TARGET = 27.0`) — swap `runs-on: macos-latest` in the workflow for a self-hosted runner on a Mac that already has it.
+
 ## How it works
 
 MacMoleManager mostly runs the `mole` binary as a separate process (`status --json`, `analyze --json`, `history --json`, `clean`, `optimize`, `purge`, `uninstall --list`) and renders whatever Mole reports. If Mole isn't installed, it runs Mole's own install script from [mole.fit](https://mole.fit).

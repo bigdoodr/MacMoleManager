@@ -49,6 +49,14 @@ final class AppViewModel: ObservableObject {
     /// dry-run and real-run steps use very different messages.
     @Published var busyMessage = "Working…"
     @Published var errorMessage: String?
+    /// Set alongside `errorMessage` when it matches `MoleRunner.describesBrokenHomebrewInstall`
+    /// — drives ErrorBanner's "Reinstall via Homebrew" button instead of a plain dismiss.
+    @Published var moleInstallNeedsRepair = false
+    @Published var isRepairingMoleInstall = false
+    /// Set when `repairMoleInstall()`'s whole Homebrew-side repair chain (reinstall, then
+    /// `brew link --overwrite`) still fails — drives ErrorBanner's "Install Mole Directly"
+    /// button, which bypasses Homebrew entirely via the existing `installMole()` flow.
+    @Published var moleHomebrewRepairFailed = false
     @Published var fullDiskAccessGranted = FullDiskAccess.isGranted()
 
     // Mole install/update state
@@ -191,6 +199,7 @@ final class AppViewModel: ObservableObject {
     func installMole() async {
         isInstallingMole = true
         errorMessage = nil
+        moleHomebrewRepairFailed = false
         defer { isInstallingMole = false }
         do {
             do {
@@ -626,16 +635,63 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Shared wrapper: sets isBusy/busyMessage, clears/reports errorMessage.
+    /// Shared wrapper: sets isBusy/busyMessage, clears/reports errorMessage. Also recognizes
+    /// mole's Homebrew-Cellar-file-missing failure (see `MoleRunner.describesBrokenHomebrewInstall`)
+    /// and routes it to a friendlier message with a one-click repair action instead of the raw dump.
     private func runTask(message: String = "Working…", _ work: @escaping () async throws -> Void) async {
         busyMessage = message
         isBusy = true
         errorMessage = nil
+        moleInstallNeedsRepair = false
+        moleHomebrewRepairFailed = false
         defer { isBusy = false }
         do {
             try await work()
         } catch {
-            errorMessage = error.localizedDescription
+            let description = error.localizedDescription
+            if MoleRunner.describesBrokenHomebrewInstall(description) {
+                moleInstallNeedsRepair = true
+                errorMessage = "Mole's Homebrew install looks broken — its installed files are missing, usually from an interrupted \"brew upgrade\" or a Migration Assistant transfer that didn't carry over Homebrew's internal symlinks. Click \"Reinstall via Homebrew\" below to fix it.\n\n\(description)"
+            } else {
+                errorMessage = description
+            }
         }
+    }
+
+    /// Triggered by ErrorBanner's "Reinstall via Homebrew" button, shown when
+    /// `moleInstallNeedsRepair` is set. Escalates in two steps before giving up on Homebrew:
+    /// 1. `brew reinstall mole` — re-lays-down the current version's files even though
+    ///    Homebrew's receipt already says it's installed (unlike `brew upgrade`, which would
+    ///    no-op here).
+    /// 2. If that specifically fails at Homebrew's own `brew link` step (something already
+    ///    sitting at the destination symlink path, often left behind by the very breakage this
+    ///    is repairing), `brew link --overwrite mole` — the bottle was already poured
+    ///    successfully in step 1, so this doesn't re-fetch anything.
+    /// If both fail, sets `moleHomebrewRepairFailed` so the UI offers bypassing Homebrew
+    /// entirely via `installMole()` instead of retrying the same repair again.
+    func repairMoleInstall() async {
+        isRepairingMoleInstall = true
+        defer { isRepairingMoleInstall = false }
+        do {
+            _ = try await runner.reinstallViaHomebrew()
+        } catch {
+            let description = error.localizedDescription
+            guard MoleRunner.describesBrewLinkFailure(description) else {
+                errorMessage = description
+                return
+            }
+            do {
+                _ = try await runner.linkViaHomebrew()
+            } catch {
+                moleInstallNeedsRepair = false
+                moleHomebrewRepairFailed = true
+                errorMessage = "Mole's Homebrew install couldn't be repaired automatically — Homebrew itself failed to relink it:\n\n\(error.localizedDescription)\n\nClick \"Install Mole Directly\" below to bypass Homebrew entirely; MacMoleManager will prefer that copy from then on."
+                return
+            }
+        }
+        moleInstallNeedsRepair = false
+        errorMessage = nil
+        await refreshMoleVersion()
+        await loadStatus()
     }
 }

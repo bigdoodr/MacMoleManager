@@ -10,7 +10,7 @@ import Foundation
 enum MoleError: LocalizedError {
     case binaryNotFound
     case homebrewNotFound
-    case processFailed(exitCode: Int32, output: String)
+    case processFailed(command: String, exitCode: Int32, output: String)
     case decodingFailed(String)
 
     var errorDescription: String? {
@@ -19,8 +19,8 @@ enum MoleError: LocalizedError {
             return "Couldn't find the mole binary. Checked /usr/local/bin/mole and $PATH."
         case .homebrewNotFound:
             return "Mole was installed via Homebrew, but the brew binary itself couldn't be found. Run `brew upgrade mole` manually in Terminal."
-        case .processFailed(let code, let output):
-            return "mole exited with code \(code):\n\(output)"
+        case .processFailed(let command, let code, let output):
+            return "\(command) exited with code \(code):\n\(output)"
         case .decodingFailed(let raw):
             return "Couldn't parse mole's JSON output:\n\(raw.prefix(500))"
         }
@@ -86,6 +86,29 @@ actor MoleRunner {
         return (resolved.contains("/Cellar/") || resolved.contains("/Caskroom/")) ? .homebrew : .directDownload
     }
 
+    /// True when `message` is mole's own wrapper script failing to find a support file
+    /// under its Homebrew Cellar path — e.g. `.../Cellar/mole/1.51.0/libexec/lib/core/common.sh:
+    /// No such file or directory`. That means the installed version's files are gone (a
+    /// botched `brew upgrade`, or a Migration Assistant transfer that didn't carry over
+    /// Homebrew's internal symlinks) while `bin/mole` itself is still executable, so
+    /// `resolveBinaryPath()` finds it and runs it — it just can't get past its own preamble.
+    /// `brew reinstall mole` (see `reinstallViaHomebrew()`) is the fix: unlike `brew upgrade`,
+    /// it re-lays-down the current version's files even when Homebrew's bookkeeping already
+    /// considers that version "latest."
+    static func describesBrokenHomebrewInstall(_ message: String) -> Bool {
+        message.contains("/Cellar/mole/") && message.localizedCaseInsensitiveContains("no such file or directory")
+    }
+
+    /// True when `brew reinstall`/`brew upgrade` poured the new bottle fine but failed at the
+    /// final symlinking step — Homebrew's fixed error text is "Error: The `brew link` step did
+    /// not complete successfully". Usually means something non-Homebrew-owned already sits at
+    /// one of the destination symlink paths (e.g. `/opt/homebrew/bin/mole`); `brew link
+    /// --overwrite` (see `linkViaHomebrew()`) is Homebrew's own documented fix, and doesn't
+    /// require re-fetching/re-pouring the bottle that already succeeded.
+    static func describesBrewLinkFailure(_ message: String) -> Bool {
+        message.contains("brew link") && message.localizedCaseInsensitiveContains("did not complete successfully")
+    }
+
     /// Apple Silicon and Intel Homebrew use separate prefixes, each with their own `brew`.
     private func resolveHomebrewPath() -> String? {
         ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
@@ -125,6 +148,37 @@ actor MoleRunner {
             executableURL: URL(fileURLWithPath: brewPath),
             arguments: ["upgrade", "mole"]
         )
+    }
+
+    /// `brew reinstall mole`, run unprivileged — the fix for `describesBrokenHomebrewInstall`.
+    /// `brew upgrade` would no-op here since Homebrew's receipt already says the current
+    /// version is installed; `reinstall` re-lays-down that version's files regardless.
+    func reinstallViaHomebrew() async throws -> String {
+        guard let brewPath = resolveHomebrewPath() else {
+            throw MoleError.homebrewNotFound
+        }
+        cachedBinaryPath = nil
+        let output = try await runProcess(
+            executableURL: URL(fileURLWithPath: brewPath),
+            arguments: ["reinstall", "mole"]
+        )
+        _ = try resolveBinaryPath()
+        return output
+    }
+
+    /// `brew link --overwrite mole`, run unprivileged — the fix for `describesBrewLinkFailure`,
+    /// following a `reinstallViaHomebrew()` that poured the bottle but failed to link it.
+    func linkViaHomebrew() async throws -> String {
+        guard let brewPath = resolveHomebrewPath() else {
+            throw MoleError.homebrewNotFound
+        }
+        cachedBinaryPath = nil
+        let output = try await runProcess(
+            executableURL: URL(fileURLWithPath: brewPath),
+            arguments: ["link", "--overwrite", "mole"]
+        )
+        _ = try resolveBinaryPath()
+        return output
     }
 
     // MARK: - Install
@@ -245,7 +299,7 @@ actor MoleRunner {
     private func runTolerantOfNonzeroExit(arguments: [String], liveOutput: ProcessOutputBuffer? = nil) async throws -> String {
         do {
             return try await run(arguments: arguments, liveOutput: liveOutput)
-        } catch let MoleError.processFailed(_, output) {
+        } catch let MoleError.processFailed(_, _, output) {
             return output
         }
     }
@@ -311,6 +365,7 @@ actor MoleRunner {
                     continuation.resume(returning: out)
                 } else {
                     continuation.resume(throwing: MoleError.processFailed(
+                        command: executableURL.lastPathComponent,
                         exitCode: proc.terminationStatus,
                         output: err.isEmpty ? out : err
                     ))

@@ -38,6 +38,7 @@ set -euo pipefail
 SCHEME="MacMoleManager"
 PROJECT="MacMoleManager.xcodeproj"
 BUNDLE_ID="rocks.scruggsfam.MacMoleManager"
+DEVELOPMENT_TEAM="C7ZFPH2CB5"
 VERSION="$(defaults read "$(dirname "$0")/../MacMoleManager/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.0")"
 
 # Path to an already-exported, already-notarized .app (see option 1
@@ -90,15 +91,19 @@ else
     echo "==> Exporting archive (developer-id: signs, notarizes, and staples if Xcode has credentials on file)..."
     EXPORT_OPTIONS_PLIST="$ROOT_DIR/Packaging/ExportOptions.plist"
     if [ ! -f "$EXPORT_OPTIONS_PLIST" ]; then
-        cat > "$EXPORT_OPTIONS_PLIST" << 'PLIST_EOF'
+        cat > "$EXPORT_OPTIONS_PLIST" << PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>method</key>
     <string>developer-id</string>
+    <key>teamID</key>
+    <string>$DEVELOPMENT_TEAM</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
 </dict>
 </plist>
 PLIST_EOF
