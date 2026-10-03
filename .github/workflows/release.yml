@@ -108,6 +108,7 @@ jobs:
             -scheme "$SCHEME" \
             -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
             -destination "generic/platform=macOS" \
+            -skipPackagePluginValidation \
             CODE_SIGN_STYLE=Manual \
             "CODE_SIGN_IDENTITY=$APP_IDENTITY" \
             "DEVELOPMENT_TEAM=$TEAM_ID" \
