@@ -30,12 +30,20 @@ if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ] || [ "$CONSOLE_USER" =
     exit 0
 fi
 CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null || echo "")"
+CONSOLE_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')"
+[ -n "$CONSOLE_HOME" ] || CONSOLE_HOME="/Users/$CONSOLE_USER"
 
 run_as_console_user() {
     # launchctl asuser gets a real user session context (Aqua bootstrap),
     # not just the right uid — needed for anything that talks to
     # WindowServer/System Settings, same as `open` below.
-    /bin/launchctl asuser "$CONSOLE_UID" sudo -u "$CONSOLE_USER" "$@"
+    #
+    # HOME/USER/LOGNAME are set explicitly: macOS's sudoers keeps the caller's
+    # HOME, and this script runs as root, so without `env` the child (Mole's
+    # installer, and the app launched in step 3) runs as the user but with
+    # HOME=/var/root and can't write ~/.config or read ~/.bash_profile.
+    /bin/launchctl asuser "$CONSOLE_UID" sudo -H -u "$CONSOLE_USER" \
+        /usr/bin/env HOME="$CONSOLE_HOME" USER="$CONSOLE_USER" LOGNAME="$CONSOLE_USER" "$@"
 }
 
 # --- 1. Pre-install Mole -----------------------------------------------

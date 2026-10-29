@@ -14,6 +14,17 @@ struct MacStorageManagerApp: App {
     @Environment(\.openWindow) private var openWindow
 
     init() {
+        // An installer/MDM script running as root can launch this app as the
+        // console user while leaving HOME=/var/root in the environment; every
+        // child process (mole, its installer, brew) would inherit it and fail
+        // writing ~/.config. The passwd entry is the source of truth.
+        if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
+            let realHome = String(cString: dir)
+            if ProcessInfo.processInfo.environment["HOME"] != realHome {
+                setenv("HOME", realHome, 1)
+            }
+        }
+
         // Every window shares one AppViewModel, so a second tab would just mirror
         // the first window's sidebar selection instead of being independent.
         NSWindow.allowsAutomaticWindowTabbing = false
