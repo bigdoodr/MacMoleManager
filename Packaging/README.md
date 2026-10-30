@@ -26,7 +26,7 @@ still handle that case.
 Packaging/
   build-pkg.sh                  — run this locally (needs Xcode + a Developer ID Installer cert)
   scripts/postinstall           — runs as root during `installer`/Self Service
-  PPPC-template.mobileconfig    — starter PPPC profile for an MDM, grants FDA + Finder Automation
+  PPPC-template.mobileconfig    — starter PPPC profile for an MDM, grants FDA + Finder/System Events Automation
 ```
 
 ## Building
@@ -68,6 +68,7 @@ installs on your own Mac (right-click → Open, or `sudo installer -pkg ...
 
 - **SystemPolicyAllFiles** (Full Disk Access) — `Allow`
 - **AppleEvents** targeting `com.apple.finder` — `Allow`
+- **AppleEvents** targeting `com.apple.systemevents` — `Allow` (Mole triggers this during Clean/Optimize; macOS credits it to MacMoleManager)
 
 Push it the same way as any other MDM custom profile. Once it's on a Mac,
 both `FullDiskAccess.swift`'s in-app prompt and `FinderRevealHelper`'s

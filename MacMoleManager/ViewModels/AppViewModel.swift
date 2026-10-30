@@ -57,6 +57,9 @@ final class AppViewModel: ObservableObject {
     /// `brew link --overwrite`) still fails — drives ErrorBanner's "Install Mole Directly"
     /// button, which bypasses Homebrew entirely via the existing `installMole()` flow.
     @Published var moleHomebrewRepairFailed = false
+    /// Set when `errorMessage` matches `MoleRunner.describesBrokenDirectInstall` — drives
+    /// ErrorBanner's "Reinstall Mole" button (the existing `installMole()` flow).
+    @Published var moleNeedsReinstall = false
     @Published var fullDiskAccessGranted = FullDiskAccess.isGranted()
 
     // Mole install/update state
@@ -200,6 +203,7 @@ final class AppViewModel: ObservableObject {
         isInstallingMole = true
         errorMessage = nil
         moleHomebrewRepairFailed = false
+        moleNeedsReinstall = false
         defer { isInstallingMole = false }
         do {
             do {
@@ -260,7 +264,7 @@ final class AppViewModel: ObservableObject {
         if AdminAccess.describesMissingAdminRights(description) {
             pendingElevatedAction = action
         } else {
-            errorMessage = description
+            presentMoleFailure(description)
         }
     }
 
@@ -644,17 +648,29 @@ final class AppViewModel: ObservableObject {
         errorMessage = nil
         moleInstallNeedsRepair = false
         moleHomebrewRepairFailed = false
+        moleNeedsReinstall = false
         defer { isBusy = false }
         do {
             try await work()
         } catch {
-            let description = error.localizedDescription
-            if MoleRunner.describesBrokenHomebrewInstall(description) {
-                moleInstallNeedsRepair = true
-                errorMessage = "Mole's Homebrew install looks broken — its installed files are missing, usually from an interrupted \"brew upgrade\" or a Migration Assistant transfer that didn't carry over Homebrew's internal symlinks. Click \"Reinstall via Homebrew\" below to fix it.\n\n\(description)"
-            } else {
-                errorMessage = description
-            }
+            presentMoleFailure(error.localizedDescription)
+        }
+    }
+
+    /// Sets `errorMessage`, upgrading the two recognizable "Mole is installed but broken"
+    /// failures (Homebrew Cellar files missing; direct-install `~/.config/mole` files missing)
+    /// to a plain explanation plus a one-click repair button instead of the raw shell output.
+    private func presentMoleFailure(_ description: String) {
+        moleInstallNeedsRepair = false
+        moleNeedsReinstall = false
+        if MoleRunner.describesBrokenHomebrewInstall(description) {
+            moleInstallNeedsRepair = true
+            errorMessage = "Mole's Homebrew install looks broken — its installed files are missing, usually from an interrupted \"brew upgrade\" or a Migration Assistant transfer that didn't carry over Homebrew's internal symlinks. Click \"Reinstall via Homebrew\" below to fix it.\n\n\(description)"
+        } else if MoleRunner.describesBrokenDirectInstall(description) {
+            moleNeedsReinstall = true
+            errorMessage = "Mole is installed, but the support files it loads from ~/.config/mole are missing (they may have been deleted, or never created for this user). Click \"Reinstall Mole\" below to restore them.\n\n\(description)"
+        } else {
+            errorMessage = description
         }
     }
 

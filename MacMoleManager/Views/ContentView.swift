@@ -134,6 +134,13 @@ private struct ErrorBanner: View {
                 } else {
                     Button("Install Mole Directly") { Task { await vm.installMole() } }
                 }
+            } else if vm.moleNeedsReinstall {
+                if vm.isInstallingMole {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("Reinstall Mole") { Task { await vm.installMole() } }
+                }
             }
         }
         .padding(10)

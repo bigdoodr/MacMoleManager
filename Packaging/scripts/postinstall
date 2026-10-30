@@ -49,13 +49,16 @@ run_as_console_user() {
 # --- 1. Pre-install Mole -----------------------------------------------
 if [ ! -x /usr/local/bin/mole ] && ! command -v mole >/dev/null 2>&1; then
     log "Mole not found — running its official installer as $CONSOLE_USER."
-    # Mole's install script (mole.fit) is the same one MoleRunner.swift's
-    # installScriptCommand runs from inside the app — kept in sync by
-    # hand since it's a one-line curl|bash and not worth vendoring here.
-    if run_as_console_user /bin/bash -c 'curl -fsSL https://mole.fit/install.sh | bash' >/tmp/mmm-mole-install.log 2>&1; then
+    # Must match MoleRunner.installScriptCommand (same one-line curl|bash).
+    # Not mole.fit/install.sh — that path 404s. Mole's installer also refuses
+    # to run as root and needs sudo to write /usr/local/bin, so for a standard
+    # (non-admin) user this is expected to fail and fall through to the in-app
+    # installer + Privileges flow.
+    MOLE_INSTALL_LOG="/Library/Logs/MacMoleManager-mole-install.log"
+    if run_as_console_user /bin/bash -c 'curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash' >"$MOLE_INSTALL_LOG" 2>&1; then
         log "Mole installed successfully."
     else
-        log "Mole install script failed or needed sudo it didn't have as a plain user — leaving it to MacMoleManager's in-app installer on first launch. See /tmp/mmm-mole-install.log."
+        log "Mole install script failed or needed sudo it didn't have as a plain user — leaving it to MacMoleManager's in-app installer on first launch. See $MOLE_INSTALL_LOG."
     fi
 else
     log "Mole already present — skipping."

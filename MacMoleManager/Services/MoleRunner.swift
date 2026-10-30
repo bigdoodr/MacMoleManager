@@ -99,6 +99,15 @@ actor MoleRunner {
         message.contains("/Cellar/mole/") && message.localizedCaseInsensitiveContains("no such file or directory")
     }
 
+    /// True when a direct-download `mole` launcher in `/usr/local/bin` can't find the support
+    /// files the installer put under `~/.config/mole` (e.g. `.../.config/mole/lib/core/common.sh:
+    /// No such file or directory`) — deleted by hand, by a cleanup tool, or never copied for
+    /// this user. The launcher is still executable, so `resolveBinaryPath()` reports Mole as
+    /// installed; re-running Mole's installer (see `AppViewModel.installMole()`) restores it.
+    static func describesBrokenDirectInstall(_ message: String) -> Bool {
+        message.contains("/.config/mole/") && message.localizedCaseInsensitiveContains("no such file or directory")
+    }
+
     /// True when `brew reinstall`/`brew upgrade` poured the new bottle fine but failed at the
     /// final symlinking step — Homebrew's fixed error text is "Error: The `brew link` step did
     /// not complete successfully". Usually means something non-Homebrew-owned already sits at

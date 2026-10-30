@@ -9,16 +9,17 @@
 
     - Full Disk Access            (SystemPolicyAllFiles)
     - Control of Finder via Apple Events (AppleEvents → com.apple.finder)
+    - Control of System Events via Apple Events (AppleEvents → com.apple.systemevents)
 
-  These are exactly the two prompts the coworker feedback session flagged
+  These are the prompts the coworker feedback session flagged
   as confusing when they DO show up (FullDiskAccess.swift's banner, and
   FinderRevealHelper's priming dialog before the system "wants access to
   control Finder" dialog). Both are fallbacks for whoever this profile
   hasn't reached yet — on a Mac that has it, neither ever fires.
 
-  BEFORE UPLOADING TO MOSYLE, replace the two placeholders below:
+  BEFORE UPLOADING TO MOSYLE, replace the placeholders below:
 
-    __PAYLOAD_UUID_1__, __PAYLOAD_UUID_2__, __TOP_LEVEL_UUID__
+    __PAYLOAD_UUID_1__, __TOP_LEVEL_UUID__
         Any fresh UUIDs (`uuidgen` in Terminal, once per placeholder).
 
     __CODE_REQUIREMENT__
@@ -33,10 +34,11 @@
         exists mainly so the requirement lives in the repo, not only in
         the Mosyle console.
 
-  Most MDM consoles (Mosyle included) have a dedicated PPPC payload
-  builder that does the UUID/requirement plumbing for you — treat this
-  file as a reference for exactly which two grants to configure there,
-  not necessarily as something to upload byte-for-byte.
+  Upload the filled-in file under Mosyle's Certificates / Custom Profiles,
+  NOT through its Security & Privacy form. That form keeps only one Apple
+  Events receiver per app, so building this profile there silently drops
+  either Finder or System Events (two AppleEvents entries, one list, is
+  exactly what this file provides).
 -->
 <plist version="1.0">
 <dict>
@@ -66,8 +68,6 @@
                         <string>bundleID</string>
                         <key>CodeRequirement</key>
                         <string>__CODE_REQUIREMENT__</string>
-                        <key>Allowed</key>
-                        <true/>
                         <key>Authorization</key>
                         <string>Allow</string>
                     </dict>
@@ -87,8 +87,22 @@
                         <string>bundleID</string>
                         <key>AEReceiverCodeRequirement</key>
                         <string>identifier "com.apple.finder" and anchor apple</string>
-                        <key>Allowed</key>
-                        <true/>
+                        <key>Authorization</key>
+                        <string>Allow</string>
+                    </dict>
+                    <dict>
+                        <key>Identifier</key>
+                        <string>rocks.scruggsfam.MacMoleManager</string>
+                        <key>IdentifierType</key>
+                        <string>bundleID</string>
+                        <key>CodeRequirement</key>
+                        <string>__CODE_REQUIREMENT__</string>
+                        <key>AEReceiverIdentifier</key>
+                        <string>com.apple.systemevents</string>
+                        <key>AEReceiverIdentifierType</key>
+                        <string>bundleID</string>
+                        <key>AEReceiverCodeRequirement</key>
+                        <string>identifier "com.apple.systemevents" and anchor apple</string>
                         <key>Authorization</key>
                         <string>Allow</string>
                     </dict>
@@ -97,7 +111,7 @@
         </dict>
     </array>
     <key>PayloadDisplayName</key>
-    <string>MacMoleManager PPPC (Full Disk Access + Finder Automation)</string>
+    <string>MacMoleManager PPPC (Full Disk Access + Finder/System Events Automation)</string>
     <key>PayloadIdentifier</key>
     <string>rocks.scruggsfam.MacMoleManager.pppc.__TOP_LEVEL_UUID__</string>
     <key>PayloadOrganization</key>
